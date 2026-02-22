@@ -11,7 +11,8 @@ import matplotlib.pyplot as plt
 #filename = 'RAW_data/PB17.acq'
 #filename = 'RAW_data/PB5.acq'
 #filename = 'RAW_data/PB12.acq'
-filename = 'RAW_data/PB13.acq'
+#filename = 'RAW_data/PB13.acq'
+filename = 'RAW_data/PB21.acq'
 file = bioread.read_file(filename)
 #file = bioread.read_file('RAW_data/PB12.acq')
 #file = bioread.read_file('RAW_data/PB13.acq')
@@ -125,8 +126,22 @@ for m in file.event_markers:
         if name_seg_before != None:
             segments[name_seg_before].after = name
         name_seg_before = name
+    elif m.text.endswith("_start") and filename == 'RAW_data/PB21.acq':
+        name = m.text.removesuffix("_start")
+        current_seg = Segment(name, m.text, m.sample_index, name_seg_before)
+        segments[name] = current_seg
+        if name_seg_before != None:
+            segments[name_seg_before].after = name
+        name_seg_before = name
     elif m.text.startswith("end "):
         name = m.text.removeprefix("end ")
+        current_seg = segments[name]
+        current_seg.end_index_text = m.text
+        current_seg.end_index = m.sample_index
+        current_seg.make_df()
+        name_seg_before = name
+    elif m.text.endswith("_end") and filename == 'RAW_data/PB21.acq':
+        name = m.text.removesuffix("_end")
         current_seg = segments[name]
         current_seg.end_index_text = m.text
         current_seg.end_index = m.sample_index

@@ -146,6 +146,20 @@ class Filedata(object):
                 current_seg.end_index = m.sample_index
                 current_seg.make_df(file)
                 name_seg_before = name
+            elif m.text.endswith("_start") and self.filename == 'RAW_data/PB21.acq':
+                name = m.text.removesuffix("_start")
+                current_seg = Segment(name, m.text, m.sample_index, name_seg_before)
+                self.segments[name] = current_seg
+                if name_seg_before != None:
+                    self.segments[name_seg_before].after = name
+                name_seg_before = name
+            elif m.text.endswith("_end") and self.filename == 'RAW_data/PB21.acq':
+                name = m.text.removesuffix("_end")
+                current_seg = self.segments[name]
+                current_seg.end_index_text = m.text
+                current_seg.end_index = m.sample_index
+                current_seg.make_df(file)
+                name_seg_before = name
             else:
                 if name_seg_before != None:
                     print("insider: " + m.text)
@@ -229,7 +243,7 @@ def EDA_report(df, name):
 
 def main():
     fdatas = {}
-    for filename in ['RAW_data/PB5.acq', 'RAW_data/PB12.acq', 'RAW_data/PB13.acq', 'RAW_data/PB17.acq']:
+    for filename in ['RAW_data/PB5.acq', 'RAW_data/PB12.acq', 'RAW_data/PB13.acq', 'RAW_data/PB17.acq', 'RAW_data/PB21.acq']:
         fdata = Filedata(filename)
         fdata.preparedata()
         fdatas[filename] = fdata
