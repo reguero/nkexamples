@@ -165,14 +165,14 @@ class Filedata(object):
             current_seg.end_index = self.segments['stress2_MIST'].start_index
             current_seg.make_df(file)
                                                                                            
-def ECG_report(df, name):
-    print('Segment {0}:'.format(name))
+def ECG_report(df, name, fnam):
+    print('Segment {0}.{1}:'.format(fnam, name))
     nk.signal_plot(df, subplots=True, sampling_rate=1000)
     #fig = plt.gcf()
     #fig.savefig("all_{0}.png".format(name))
     plt.close()
 
-    print('ECG of segment {0}:'.format(name))
+    print('ECG of segment {0}.{1}:'.format(fnam, name))
     nk.signal_plot(df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
     #fig = plt.gcf()
     #fig.savefig("ecg_{0}.png".format(name))
@@ -182,9 +182,9 @@ def ECG_report(df, name):
     # Compute HRV indices
     hrv = nk.hrv_time(peaks, sampling_rate=1000, show=True)
     fig = plt.gcf()
-    fig.savefig("hrv_{0}.png".format(name))
+    fig.savefig("hrv_{0}_{1}.png".format(fnam, name))
     plt.close(fig)
-    print('HRV of segment {0}:'.format(name))
+    print('HRV of segment {0}.{1}:'.format(fnam, name))
     print(hrv)
     #for col in hrv:
     #    print(col)
@@ -200,11 +200,11 @@ def ECG_report(df, name):
     # Visualize
     nk.ecg_plot(signals, info)
     fig = plt.gcf()
-    fig.savefig("ecg_proccess_{0}.png".format(name))
+    fig.savefig("ecg_proccess_{0}_{1}.png".format(fnam, name))
     plt.close()
     # Analyze
     analyze_df = nk.ecg_analyze(signals, sampling_rate=1000)
-    print('ECG analyze output of segment {0}:'.format(name))
+    print('ECG analyze output of segment {0}.{1}:'.format(fnam, name))
     print(analyze_df)
     #for col in analyze_df:
     #    print(col)
@@ -215,16 +215,16 @@ def ECG_report(df, name):
     print(analyze_df['HRV_RMSSD'].apply(lambda x: np.array(x).flatten()[0]))
     #print(analyze_df.iloc[0]['HRV_RMSSD'][0][0])
 
-def EDA_report(df, name):
+def EDA_report(df, name, fnam):
     #reportname = 'EDAreport_{0}.html'.format(name)
     #signals, info = nk.eda_process(df['EDA (0 - 35 Hz)'], sampling_rate=1000, report=reportname)
     #signals, info = nk.eda_process(df['EDA (0 - 35 Hz)'], sampling_rate=1000, report="text")
     signals, info = nk.eda_process(df['EDA (0 - 35 Hz)'], sampling_rate=1000)
     nk.eda_plot(signals, info)
     fig = plt.gcf()
-    fig.savefig("eda_{0}.png".format(name))
+    fig.savefig("eda_{0}_{1}.png".format(fnam, name))
     plt.close(fig)
-    print('EDA of segment {0}:'.format(name))
+    print('EDA of segment {0}.{1}:'.format(fnam, name))
     #print(signals)
     #print(info)
     analyze_df = nk.eda_analyze(signals, sampling_rate=1000)
@@ -251,8 +251,8 @@ def main():
     for fnam, fdat in fdatas.items():
         print('\nFile {0}:'.format(fnam))
         for name, seg in fdat.segments.items():
-            ECG_report(seg.df, name)
-            EDA_report(seg.df, name)
+            ECG_report(seg.df, name, fnam)
+            EDA_report(seg.df, name, fnam)
             pass
 
         print('\nFor file {0}:'.format(fnam))
