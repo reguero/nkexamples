@@ -195,6 +195,26 @@ def ECG_report(df, name):
     print(hrv['HRV_RMSSD'])
     #print(hrv.iloc[0]['HRV_RMSSD'])
 
+    # Preprocess ECG signal
+    signals, info = nk.ecg_process(df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
+    # Visualize
+    nk.ecg_plot(signals, info)
+    fig = plt.gcf()
+    fig.savefig("ecg_proccess_{0}.png".format(name))
+    plt.close()
+    # Analyze
+    analyze_df = nk.ecg_analyze(signals, sampling_rate=1000)
+    print('ECG analyze output of segment {0}:'.format(name))
+    print(analyze_df)
+    #for col in analyze_df:
+    #    print(col)
+    print(analyze_df['HRV_MeanNN'].apply(lambda x: np.array(x).flatten()[0]))
+    #print(analyze_df['HRV_MeanNN'].iloc[0][0][0])
+    print(analyze_df['HRV_SDNN'].apply(lambda x: np.array(x).flatten()[0]))
+    #print(analyze_df.iloc[0]['HRV_SDNN'][0][0])
+    print(analyze_df['HRV_RMSSD'].apply(lambda x: np.array(x).flatten()[0]))
+    #print(analyze_df.iloc[0]['HRV_RMSSD'][0][0])
+
 def EDA_report(df, name):
     #reportname = 'EDAreport_{0}.html'.format(name)
     #signals, info = nk.eda_process(df['EDA (0 - 35 Hz)'], sampling_rate=1000, report=reportname)
