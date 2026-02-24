@@ -210,10 +210,17 @@ def EDA_report(df, name):
     analyze_df = nk.eda_analyze(signals, sampling_rate=1000)
     print(analyze_df)
 
+def sort_filelist(l):
+    import re
+    convert = lambda text: int(text) if text.isdigit() else text
+    alphanum = lambda key: [convert(c) for c in re.split(r'PB(\d+)', key)]
+    l.sort(key=alphanum)
+    return l
+
 def main():
     fdatas = {}
     labeled_files = os.listdir('RAW_data/labeled')
-    for lbfile in labeled_files:
+    for lbfile in sort_filelist(labeled_files):
         if lbfile.endswith(".acq"):
            filename = lbfile.removesuffix(".acq")
            print(filename)
