@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 import os
 import pickle
 
+#pd.options.display.max_columns = None
+#pd.options.display.max_rows = None
+
 #for filename in ['RAW_data/PB5.acq', 'RAW_data/PB12.acq', 'RAW_data/PB13.acq', 'RAW_data/PB17.acq']:
 #    file = bioread.read_file(filename)
 
@@ -290,12 +293,19 @@ def main():
                 print('segment: [{0}] before: [{1}] after [{2}] start [{3}] end [{4}] marker_inside label[{5}] marker_inside index [{6}]'.format(name, seg.before, seg.after, seg.start_index, seg.end_index, seg.marker_inside_text, seg.marker_inside_index))
             else:
                 print('segment: [{0}] before: [{1}] after [{2}] start [{3}] end [{4}]'.format(name, seg.before, seg.after, seg.start_index, seg.end_index))
-        fdat.analyze_ecg['seg_name'] = segnames
-        fdat.analyze_ecg.set_index('seg_name', inplace=True)
-        fdat.analyze_eda['seg_name'] = segnames
-        fdat.analyze_eda.set_index('seg_name', inplace=True)
-        print(fdat.analyze_ecg)
-        print(fdat.analyze_eda)
+        #fdat.analyze_ecg['seg_name'] = segnames
+        #fdat.analyze_ecg.set_index('seg_name', inplace=True)
+        #fdat.analyze_eda['seg_name'] = segnames
+        #fdat.analyze_eda.set_index('seg_name', inplace=True)
+
+        #print(fdat.analyze_ecg)
+        print(fdat.analyze)
+        print(fdat.analyze.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk]])
+        #print(fdat.analyze_ecg.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD']])
+        #print(fdat.analyze_eda.loc[:, ['EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']])
+
+        #print('{0} {1}'.format(fdat.analyze_ecg.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD']], fdat.analyze_eda.loc[:, ['EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']]))
+        #fdat.analyze_eda.loc[:, ['EDA_Tonic_SD', 'SCR_Peaks_Amplitude_MeanSCR_Peaks_Amplitude_Mean']]
         #first = ""
         #for name, seg in segments.items():
         #    if seg.before == None:

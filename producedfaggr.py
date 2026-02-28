@@ -93,6 +93,7 @@ class Filedata(object):
         self.segments = {}
         #self.analyze_ecg = {}
         #self.analyze_eda = {}
+        #self.analyze = {}
 
     def preparedata(self):
         name_seg_before = None
@@ -168,20 +169,20 @@ class Filedata(object):
             current_seg.end_index = self.segments['stress2_MIST'].start_index
             current_seg.make_df(file)
                                                                                            
-def ECG_report(df, name, fdat, fnam):
+def ECG_report(seg, name, fdat, fnam):
     print('Segment {0}.{1}:'.format(fnam, name))
-    #nk.signal_plot(df, subplots=True, sampling_rate=1000)
+    #nk.signal_plot(seg.df, subplots=True, sampling_rate=1000)
     #fig = plt.gcf()
     #fig.savefig("all_{0}.png".format(name))
     #plt.close()
 
     #print('ECG of segment {0}.{1}:'.format(fnam, name))
-    #nk.signal_plot(df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
+    #nk.signal_plot(seg.df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
     #fig = plt.gcf()
     #fig.savefig("ecg_{0}.png".format(name))
     #plt.close()
     # Find peaks
-    #peaks, info = nk.ecg_peaks(df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
+    #peaks, info = nk.ecg_peaks(seg.df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
     # Compute HRV indices
     #hrv = nk.hrv_time(peaks, sampling_rate=1000, show=True)
     #fig = plt.gcf()
@@ -199,7 +200,7 @@ def ECG_report(df, name, fdat, fnam):
     #print(hrv.iloc[0]['HRV_RMSSD'])
 
     # Preprocess ECG signal
-    clean_signals, info = nk.ecg_process(df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
+    clean_signals, info = nk.ecg_process(seg.df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
     # Visualize
     nk.ecg_plot(clean_signals, info)
     fig = plt.gcf()
@@ -207,6 +208,11 @@ def ECG_report(df, name, fdat, fnam):
     plt.close()
     # Analyze
     analyze_df = nk.ecg_analyze(clean_signals, sampling_rate=1000)
+    # Flatten the columns if they are nested lists
+    for col in analyze_df.columns:
+        analyze_df[col] = analyze_df[col].apply(lambda x: x[0][0] if isinstance(x, (list, np.ndarray)) else x)
+    # Add Segment Label
+    analyze_df['Segment_Label'] = name
     print('ECG analyze output of segment {0}.{1}:'.format(fnam, name))
     print(analyze_df)
     if name =='baseline'or (name == 'stress2_ABBA' and fnam == 'PB1_only_part2'):
@@ -223,11 +229,11 @@ def ECG_report(df, name, fdat, fnam):
     print(analyze_df['HRV_RMSSD'].apply(lambda x: np.array(x).flatten()[0]))
     #print(analyze_df.iloc[0]['HRV_RMSSD'][0][0])
 
-def EDA_report(df, name, fdat, fnam):
+def EDA_report(seg, name, fdat, fnam):
     reportname = 'EDAreport_{0}_{1}.html'.format(fnam, name)
-    signals, info = nk.eda_process(df['EDA (0 - 35 Hz)'], sampling_rate=1000, report=reportname)
-    #signals, info = nk.eda_process(df['EDA (0 - 35 Hz)'], sampling_rate=1000, report="text")
-    #signals, info = nk.eda_process(df['EDA (0 - 35 Hz)'], sampling_rate=1000)
+    signals, info = nk.eda_process(seg.df['EDA (0 - 35 Hz)'], sampling_rate=1000, report=reportname)
+    #signals, info = nk.eda_process(seg.df['EDA (0 - 35 Hz)'], sampling_rate=1000, report="text")
+    #signals, info = nk.eda_process(seg.df['EDA (0 - 35 Hz)'], sampling_rate=1000)
     nk.eda_plot(signals, info)
     fig = plt.gcf()
     fig.savefig("eda_{0}_{1}.png".format(fnam, name))
@@ -236,6 +242,21 @@ def EDA_report(df, name, fdat, fnam):
     #print(signals)
     #print(info)
     analyze_df = nk.eda_analyze(signals, sampling_rate=1000)
+    # Manually add the average Tonic level (SCL) for this segment
+    analyze_df['EDA_Tonic_Mean'] = signals['EDA_Tonic'].mean()
+    # Calculate duration in minutes
+    duration_min = len(seg.df) / 1000 / 60
+    print('duration_min = {0}'.format(duration_min))
+    # Add Frequency to your analyze_df
+    analyze_df['SCR_Frequency_PerMin'] = analyze_df['SCR_Peaks_N'] / duration_min
+    # Scale the Sympathetic index to be more readable (Percentage)
+    analyze_df['Sympathetic_Percent'] = analyze_df['EDA_SympatheticN'] * 100
+    # Add Segment Label
+    analyze_df['Segment_Label'] = name
+    #Add participant
+    analyze_df['Participant'] = fnam
+    # Add time in limited duration block
+    analyze_df['Unlim_Duration_Blk'] = Unlimited_duration_block(seg, name, fdat, fnam)
     print(analyze_df)
     if name =='baseline'or (name == 'stress2_ABBA' and fnam == 'PB1_only_part2'):
         fdat.analyze_eda = analyze_df
@@ -243,6 +264,12 @@ def EDA_report(df, name, fdat, fnam):
         #fdat.analyze_eda = fdat.analyze_eda.append(analyze_df)
         fdat.analyze_eda = pd.concat([fdat.analyze_eda, analyze_df], ignore_index=True)
 
+def Unlimited_duration_block(seg, name, fdat, fnam):
+    unlimited_duration_sec = 0
+    if seg.marker_inside_index != 0:
+        unlimited_duration_sec = (seg.end_index - seg.marker_inside_index)/1000
+    print('time in unlimited duration block = {0}'.format(unlimited_duration_sec))
+    return unlimited_duration_sec
 
 def sort_filelist(l):
     import re
@@ -269,12 +296,22 @@ def main():
     with open('dataframes.pkl', 'rb') as f:
         fdatas = pickle.load(f)
 
+    master_data = []
     for fnam, fdat in fdatas.items():
         print('\nFile {0}:'.format(fnam))
         for name, seg in fdat.segments.items():
-            ECG_report(seg.df, name, fdat, fnam)
-            EDA_report(seg.df, name, fdat, fnam)
-            pass
+            ECG_report(seg, name, fdat, fnam)
+            EDA_report(seg, name, fdat, fnam)
+
+        fdat.analyze_ecg.set_index('Segment_Label', inplace=True)
+        fdat.analyze_eda.set_index('Segment_Label', inplace=True)
+        fdat.analyze = pd.concat([fdat.analyze_eda, fdat.analyze_ecg], axis=1)
+        # Drop duplicated columns
+        fdat.analyze = fdat.analyze.loc[:, ~fdat.analyze.columns.duplicated()]
+        print(fdat.analyze)
+        # Drop original Dfs
+        del fdat.analyze_ecg
+        del fdat.analyze_eda
 
     # Pickling (serializing) to a file
     with open('results.pkl', 'wb') as f:
