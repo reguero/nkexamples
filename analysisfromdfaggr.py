@@ -7,6 +7,7 @@ import neurokit2 as nk
 import matplotlib.pyplot as plt
 import os
 import pickle
+import pingouin as pg
 
 #pd.options.display.max_columns = None
 #pd.options.display.max_rows = None
@@ -277,8 +278,8 @@ def delta(orig, dest, df):
     
     deltas = df_dest - df_orig
     
-    print(f"Deltas from {orig} to {dest}:")
-    print(deltas)
+    #print(f"Deltas from {orig} to {dest}:")
+    #print(deltas)
     return deltas
 
 def main():
@@ -412,14 +413,84 @@ def main():
     #    outcome['Group4'+':_'+'stress1_ABBA'+'_'+'nf1_VR'] = delta('stress1_ABBA', 'nf1_VR', fnam_df)
     #    outcome['Group4'+':_'+'stress2_MIST'+'_'+'nf2_2D'] = delta('stress2_MIST', 'nf2_2D', fnam_df)
  
-    # 1. Get the deltas for everyone
-    all_deltas = delta('stress1_ABBA', 'nf1_VR', master_df)
-    # 2. Select just Group 4 (which includes PB12)
-    # Since Participant is the index of the delta output, use .loc
-    group4_deltas = all_deltas.loc[all_deltas.index.isin(Group4)]
-    print(group4_deltas)
-    print("Average Stress Response stress1_ABBA-nf1_VR for Group 4:")
-    print(group4_deltas.mean())
+    # Mapping: Group_Name: [(Orig1, Dest1), (Orig2, Dest2)]
+    group_configs = {
+        'Group1': [('stress1_MIST', 'nf1_VR'), ('stress2_ABBA', 'nf2_2D')],
+        'Group2': [('stress1_ABBA', 'nf1_2D'), ('stress2_MIST', 'nf2_VR')],
+        'Group3': [('stress1_MIST', 'nf1_2D'), ('stress2_ABBA', 'nf2_VR')],
+        'Group4': [('stress1_ABBA', 'nf1_VR'), ('stress2_MIST', 'nf2_2D')]
+    }
+    results_storage = {}
+
+    for group, transitions in group_configs.items():
+        print(f"\n--- Analyzing {group} ---")
+        for (orig, dest) in transitions:
+            # 1. Get deltas for the whole df
+            all_deltas = delta(orig, dest, master_df)
+            # 2. Filter for only the members of THIS specific group
+            # This prevents NaNs from other participants from appearing
+            group_members = [pb for pb, g in group_map.items() if g == group]
+            group_deltas = all_deltas.loc[all_deltas.index.isin(group_members)]
+            # 3. Store and Print
+            label = f"{group}_{orig}_to_{dest}"
+            results_storage[label] = group_deltas
+            print(f"Transition: {orig} -> {dest}")
+            print(group_deltas[['SCR_Frequency_PerMin', 'HRV_RMSSD']].mean())
+
+    metrics = ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk']
+    for group_name, configs in group_configs.items():
+        print(f"\n{'='*20} {group_name} Statistical Analysis {'='*20}")
+        # 1. Extract the group members (assuming you have your Group lists defined)
+        group_list = eval(group_name) 
+        print('group_list: '+str(group_list))
+        # 2. Get Deltas for Transition 1 (T1) and Transition 2 (T2)
+        t1_all = delta(configs[0][0], configs[0][1], master_df)
+        t2_all = delta(configs[1][0], configs[1][1], master_df)
+        # Storage for this group's results
+        group_summary = []
+        for m in metrics:
+        # Filter for this group only
+            t1_m = t1_all.loc[t1_all.index.isin(group_list)][m]
+            t2_m = t2_all.loc[t2_all.index.isin(group_list)][m]
+            # Ensure we have the same participants for both sessions
+            common = t1_m.index.intersection(t2_m.index)
+            if len(common) >= 2:
+                stats = pg.ttest(t1_m.loc[common], t2_m.loc[common], paired=True)
+                # Extract results (using the underscore names from your version)
+                res = {
+                    'Metric': m,
+                    'T': stats.at['T_test', 'T'],
+                    'p_val': stats.at['T_test', 'p_val'],
+                    'cohen_d': stats.at['T_test', 'cohen_d'],
+                    'n_pairs': len(common)
+                }
+                group_summary.append(res)
+
+        # Convert to DataFrame for a clean summary table
+        summary_df = pd.DataFrame(group_summary)
+        # Highlight significant results (p < 0.05)
+        print(summary_df.sort_values(by='p_val'))
+
+    #        # 4. Perform Paired T-Test
+    #        # This tests if the "Quietness" achieved in T1 is different from T2
+    #        stats = pg.ttest(t1_group, t2_group, paired=True)
+    #        #print(stats)
+    #        print(f"\n=== {group_name} Comparison: {metric} ===")
+    #        print(f"Mean Delta T1: {t1_group.mean():.2f} peaks/min")
+    #        print(f"Mean Delta T2: {t2_group.mean():.2f} peaks/min")
+    #        p_value = stats.at['T_test', 'p_val']
+    #        cohen_d = stats.at['T_test', 'cohen_d']
+    #        print(f"P-value: {p_value:.4f} | Cohen's d: {cohen_d:.2f}")
+    #        #print(f"P-value: {stats['p_val'].values[0]:.4f} | Cohen's d: {stats['cohen_d'].values[0]:.2f}")
+
+    ## 1. Get the deltas for everyone
+    #all_deltas = delta('stress1_ABBA', 'nf1_VR', master_df)
+    ## 2. Select just Group 4 (which includes PB12)
+    ## Since Participant is the index of the delta output, use .loc
+    #group4_deltas = all_deltas.loc[all_deltas.index.isin(Group4)]
+    #print(group4_deltas)
+    #print("Average Stress Response stress1_ABBA-nf1_VR for Group 4:")
+    #print(group4_deltas.mean())
     ## Quick summary by Group
     #summary = master_df.groupby(['Experiment_Group', 'Segment'])['SCR_Frequency_PerMin'].mean()
     #print(summary)
