@@ -300,16 +300,42 @@ def main():
     with open('dfmaster.pkl', 'rb') as f:
         master_df = pickle.load(f)
 
+    # Fix PB12 with values from B12-partie_2
+    # 1. Define the segments to be replaced
+    target_segments = ['stress2_MIST', 'nf2_2D']
+    # 2. Extract the "Source" data (from PB12-partie_2)
+    # We make a .copy() to avoid modifying the original dataframe accidentally
+    source_data = master_df[
+        (master_df['Participant'] == 'PB12-partie_2') &
+        (master_df['Segment'].isin(target_segments))].copy()
+    # 3. Change the ID in the source data to match the "Target" (PB12)
+    source_data['Participant'] = 'PB12'
+    # 4. Remove the "Old/Corrupt" segments from the target (PB12)
+    # This prevents the 'Duplicate entries' error in your delta function
+    master_df = master_df.drop(
+        master_df[
+            (master_df['Participant'] == 'PB12') &
+            (master_df['Segment'].isin(target_segments))
+        ].index
+    )
+    # 5. Append the "New" data from PB12-partie_2 into the master dataframe
+    master_df = pd.concat([master_df, source_data], ignore_index=True)
+    ## 6. Optional: Remove the temporary 'PB12-partie_2' rows if you no longer need them
+    master_df = master_df[master_df['Participant'] != 'PB12-partie_2']
+    print("Final segments for PB12:")
+    print(master_df.query("Participant == 'PB12'")['Segment'].unique())
+
+
     print(master_df)
     print(master_df.columns)
     print(master_df.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk', 'Participant', 'Segment']])
-    # Quick summary of all participants
-    print(master_df['EDA_Tonic_Mean'].describe())
-    #print(master_df.groupby('Segment')['EDA_Tonic_Mean'])
-    print(master_df.groupby('Participant')['EDA_Tonic_Mean'].describe())
-    summary = master_df.groupby('Participant')[['EDA_Tonic_Mean', 'HRV_RMSSD', 'Sympathetic_Percent']].mean()
-    print("Average Physiological Shift:")
-    print(summary)
+    ## Quick summary of all participants
+    #print(master_df['EDA_Tonic_Mean'].describe())
+    #print(master_df.groupby('Participant')['EDA_Tonic_Mean'])
+    #print(master_df.groupby('Participant')['EDA_Tonic_Mean'].describe())
+    #summary = master_df.groupby('Participant')[['EDA_Tonic_Mean', 'HRV_RMSSD', 'Sympathetic_Percent']].mean()
+    #print("Average Physiological Shift:")
+    #print(summary)
 
     # Unpickling (deserializing) from a file
     #with open('dfmasterV0.pkl', 'rb') as f:
@@ -330,7 +356,7 @@ def main():
     
     for fnam, fdat in fdatas.items():
         print('\nFile {0}:'.format(fnam))
-        print(fdat.analyze)
+        #print(fdat.analyze)
         #print(fdat.segments.keys())
         segnames = []
         for name, seg in fdat.segments.items():
@@ -345,43 +371,77 @@ def main():
     Group1 = ['PB2', 'PB19', 'PB23', 'PB24']
     Group2 = ['PB4', 'PB13', 'PB15', 'PB17', 'PB21']
     Group3 = ['PB3', 'PB5', 'PB22', 'PB26', 'PB27']
-    Group4 = ['PB7', 'PB14', 'PB16', 'PB25']
-    outcome = {}
-    outcome['Group1'] = {}
-    outcome['Group2'] = {}
-    outcome['Group3'] = {}
-    outcome['Group4'] = {}
+    Group4 = ['PB7', 'PB14', 'PB16', 'PB25', 'PB12']
+    # 1. Create a mapping dictionary
+    group_map = {}
+    for pb in Group1: group_map[pb] = 'Group1'
+    for pb in Group2: group_map[pb] = 'Group2'
+    for pb in Group3: group_map[pb] = 'Group3'
+    for pb in Group4: group_map[pb] = 'Group4'
+    # 2. Add the column to your master_df
+    master_df['Experiment_Group'] = master_df['Participant'].map(group_map)
 
-    for fnam in Group1:
-        print('\nGroup1 {0}:'.format(fnam))
-        #print(fdatas[fnam].segments.keys())
-        fnam_df = master_df[master_df['Participant'] == fnam]
-        outcome['Group1']['stress1_MIST'+'_'+'nf1_VR'] = delta('stress1_MIST', 'nf1_VR', fnam_df)
-        outcome['Group1']['stress2_ABBA'+'_'+'nf2_2D'] = delta('stress2_ABBA', 'nf2_2D', fnam_df)
-    for fnam in Group2:
-        print('\nGroup2 {0}:'.format(fnam))
-        #print(fdatas[fnam].segments.keys())
-        fnam_df = master_df[master_df['Participant'] == fnam]
-        outcome['Group2']['stress1_ABBA'+'_'+'nf1_2D'] = delta('stress1_ABBA', 'nf1_2D', fnam_df)
-        outcome['Group2']['stress2_MIST'+'_'+'nf2_VR'] = delta('stress2_MIST', 'nf2_VR', fnam_df)
-    for fnam in Group3:
-        print('\nGroup3 {0}:'.format(fnam))
-        #print(fdatas[fnam].segments.keys())
-        fnam_df = master_df[master_df['Participant'] == fnam]
-        outcome['Group3']['stress1_MIST'+'_'+'nf1_2D'] = delta('stress1_MIST', 'nf1_2D', fnam_df)
-        outcome['Group3']['stress2_ABBA'+'_'+'nf2_VR'] = delta('stress2_ABBA', 'nf2_VR', fnam_df)
-    for fnam in Group4:
-        print('\nGroup4 {0}:'.format(fnam))
-        #print(fdatas[fnam].segments.keys())
-        fnam_df = master_df[master_df['Participant'] == fnam]
-        outcome['Group4']['stress1_ABBA'+'_'+'nf1_VR'] = delta('stress1_ABBA', 'nf1_VR', fnam_df)
-        outcome['Group4']['stress2_MIST'+'_'+'nf2_2D'] = delta('stress2_MIST', 'nf2_2D', fnam_df)
+    outcome = {}
+    #outcome['Group1'] = {}
+    #outcome['Group2'] = {}
+    #outcome['Group3'] = {}
+    #outcome['Group4'] = {}
+
+    #for fnam in Group1:
+    #    print('\nGroup1 {0}:'.format(fnam))
+    #    #print(fdatas[fnam].segments.keys())
+    #    fnam_df = master_df[master_df['Participant'] == fnam]
+    #    outcome['Group1'+':_'+'stress1_MIST'+'_'+'nf1_VR'] = delta('stress1_MIST', 'nf1_VR', fnam_df)
+    #    outcome['Group1'+':_'+'stress2_ABBA'+'_'+'nf2_2D'] = delta('stress2_ABBA', 'nf2_2D', fnam_df)
+    #for fnam in Group2:
+    #    print('\nGroup2 {0}:'.format(fnam))
+    #    #print(fdatas[fnam].segments.keys())
+    #    fnam_df = master_df[master_df['Participant'] == fnam]
+    #    outcome['Group2'+':_'+'stress1_ABBA'+'_'+'nf1_2D'] = delta('stress1_ABBA', 'nf1_2D', fnam_df)
+    #    outcome['Group2'+':_'+'stress2_MIST'+'_'+'nf2_VR'] = delta('stress2_MIST', 'nf2_VR', fnam_df)
+    #for fnam in Group3:
+    #    print('\nGroup3 {0}:'.format(fnam))
+    #    #print(fdatas[fnam].segments.keys())
+    #    fnam_df = master_df[master_df['Participant'] == fnam]
+    #    outcome['Group3'+':_'+'stress1_MIST'+'_'+'nf1_2D'] = delta('stress1_MIST', 'nf1_2D', fnam_df)
+    #    outcome['Group3'+':_'+'stress2_ABBA'+'_'+'nf2_VR'] = delta('stress2_ABBA', 'nf2_VR', fnam_df)
+    #for fnam in Group4:
+    #    print('\nGroup4 {0}:'.format(fnam))
+    #    #print(fdatas[fnam].segments.keys())
+    #    fnam_df = master_df[master_df['Participant'] == fnam]
+    #    outcome['Group4'+':_'+'stress1_ABBA'+'_'+'nf1_VR'] = delta('stress1_ABBA', 'nf1_VR', fnam_df)
+    #    outcome['Group4'+':_'+'stress2_MIST'+'_'+'nf2_2D'] = delta('stress2_MIST', 'nf2_2D', fnam_df)
  
-    #for g, v in outcome.items():
-    for g in ['Group1', 'Group2', 'Group3', 'Group4']:
-        for g, v in outcome[g].items():
-            for k in v:
-                print('\nOutcome for {0}: {1}:\n{2}'.format(g, k, v[k]))
+    # 1. Get the deltas for everyone
+    all_deltas = delta('stress1_ABBA', 'nf1_VR', master_df)
+    # 2. Select just Group 4 (which includes PB12)
+    # Since Participant is the index of the delta output, use .loc
+    group4_deltas = all_deltas.loc[all_deltas.index.isin(Group4)]
+    print(group4_deltas)
+    print("Average Stress Response stress1_ABBA-nf1_VR for Group 4:")
+    print(group4_deltas.mean())
+    ## Quick summary by Group
+    #summary = master_df.groupby(['Experiment_Group', 'Segment'])['SCR_Frequency_PerMin'].mean()
+    #print(summary)
+    #for o in outcome:
+    #     print('\nOutcome for {0}: {1}'.format(o, outcome[o]))
+
+    #for fnam, fdat in fdatas.items():
+    #    print('\nFile {0}:'.format(fnam))
+    #    segnames = []
+    #    for name, seg in fdat.segments.items():
+    #        segnames.append(name)
+    #    print(segnames)
+
+    ## Check what segments actually exist in the source
+    #print("Available segments in PB12-partie_2:")
+    #print(master_df.query("Participant == 'PB12-partie_2'")['Segment'].unique())
+
+    ##for g, v in outcome.items():
+    #for g in ['Group1', 'Group2', 'Group3', 'Group4']:
+    #    for g, v in outcome[g].items():
+    #        for k in v:
+    #            print('\nOutcome for {0}: {1}:\n{2}'.format(g, k, v[k]))
 
     ## Create a mask for the specific participant and segment
     #mask = (master_df['Participant'] == 'PB26') & (master_df['Segment'] == 'stress1_MIST')
