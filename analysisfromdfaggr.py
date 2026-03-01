@@ -393,75 +393,140 @@ def main():
         group_data.to_csv(f'Data_{group_name}.csv', index=False)
     print("CSVs exported: Master_Physiology_Data.csv, Final_Statistical_Results_VR_vs_2D.csv and Data_* for groups")
 
-    # --- MONKEYPATCH START ---
-    _original_getitem = pd.DataFrame.__getitem__
-    def _patched_getitem(self, key):
-        # This specifically catches the [:, :2] call from Pymer4
-        if isinstance(key, tuple) and len(key) == 2:
-            if isinstance(key[0], slice) and isinstance(key[1], slice):
-                return self.iloc[key]
-        return _original_getitem(self, key)
-    pd.DataFrame.__getitem__ = _patched_getitem
-    # Fix the .unique() bug
-    if not hasattr(pd.DataFrame, 'unique'):
-        pd.DataFrame.unique = lambda self, maintain_order=True: self.drop_duplicates()
-    # Fix the .drop(strict=False) bug
-    # We wrap the original drop to intercept and discard the 'strict' argument
-    _original_drop = pd.DataFrame.drop
-    def _patched_drop(self, *args, **kwargs):
-        kwargs.pop('strict', None) # Remove 'strict' if Pymer4 tries to pass it
-        # Force errors='ignore' so it doesn't crash on missing 'effect' or 'conf_level'
-        kwargs['errors'] = 'ignore'
-        return _original_drop(self, *args, **kwargs)
-    pd.DataFrame.drop = _patched_drop
-    # 3. Fix the .rename(strict=False) bug (likely the next error)
-    _original_rename = pd.DataFrame.rename
-    def _patched_rename(self, *args, **kwargs):
-        kwargs.pop('strict', None)
-        return _original_rename(self, *args, **kwargs)
-    pd.DataFrame.rename = _patched_rename
-    # --- MONKEYPATCH END ---
-    import polars as pl # Import polars to assist if needed
-    import rpy2.robjects as robjects
-    from rpy2.robjects import pandas2ri
-    from pymer4.models import lmer
-    # 1. Ensure your Master DF has the necessary categorical columns
-    # We want to predict a metric (e.g., EDA_Tonic_Mean) based on Modality and Stressor
-    # Participant is our Random Effect (to account for individual baselines)
-
+    import statsmodels.formula.api as smf
     # Create a clean analysis dataframe
     df_lmm = master_df.copy()
-    # Filter for only the relaxation segments (where we compare VR vs 2D)
     df_lmm = df_lmm[df_lmm['Segment'].str.contains('nf')]
-    # Add a Modality column if you haven't yet
     df_lmm['Modality'] = df_lmm['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
-    import rpy2.robjects as robjects
-    # Ensure Participant and Modality are regular columns, not indices
     df_lmm = df_lmm.reset_index()
-    # 1. Clean the Data Types before the 'with' block
-    # Ensure categorical columns have NO floats/NaNs
-    categorical_cols = ['Participant', 'Modality', 'Experiment_Group', 'Segment']
-    for col in categorical_cols:
-        if col in df_lmm.columns:
-            df_lmm[col] = df_lmm[col].fillna('Unknown').astype(str)
-    # Force numeric columns to be floats (no objects/lists)
-    numeric_cols = ['EDA_Tonic_Mean', 'SCR_Frequency_PerMin']
-    for col in numeric_cols:
-        df_lmm[col] = pd.to_numeric(df_lmm[col], errors='coerce')
-    # Drop any rows where the dependent variable is NaN (R needs this)
-    df_lmm = df_lmm.dropna(subset=['EDA_Tonic_Mean']).infer_objects()
-    # Convert to Polars
-    df_polars = pl.from_pandas(df_lmm)
-    # Create the converter context
-    with robjects.conversion.localconverter(robjects.default_converter + pandas2ri.converter):
-        # Formula: Dependent_Var ~ Fixed_Effect + (1 | Random_Effect)
-        model = lmer('EDA_Tonic_Mean ~ Modality + (1 | Participant)', data=df_polars)
-        # This is where the magic happens (Python -> R -> Python)
-        results = model.fit()
-    # Outside the block, 'results' is a normal Python object (Pandas DataFrame)
-    print("=== Linear Mixed Model Results ===")
-    print(results)
-    results.to_csv('LMM_Final_Results.csv')
+    # Clean numeric data
+    df_lmm['EDA_Tonic_Mean'] = pd.to_numeric(df_lmm['EDA_Tonic_Mean'], errors='coerce')
+    df_lmm = df_lmm.dropna(subset=['EDA_Tonic_Mean'])
+    # Fit the Linear Mixed Model
+    # Formula: Dependent_Var ~ Fixed_Effect
+    # groups: Your Random Effect (Participant)
+    model = smf.mixedlm("EDA_Tonic_Mean ~ Modality", df_lmm, groups=df_lmm["Participant"])
+    results = model.fit()
+    print("=== Statsmodels Linear Mixed Model Results ===")
+    print(results.summary())
+    # Export coefficients to CSV
+    summary_df = results.summary().tables[1]
+    summary_df.to_csv('LMM_Statsmodels_Results.csv')
+
+    # Ensure the metric is numeric and drop NaNs for this specific test
+    df_scr = df_lmm.dropna(subset=['SCR_Frequency_PerMin']).copy()
+    df_scr['SCR_Frequency_PerMin'] = pd.to_numeric(df_scr['SCR_Frequency_PerMin'])
+    # Fit the Linear Mixed Model
+    # Fixed Effect: Modality (VR vs 2D)
+    # Random Effect: Participant (Intercept)
+    model_scr = smf.mixedlm("SCR_Frequency_PerMin ~ Modality", df_scr, groups=df_scr["Participant"])
+    results_scr = model_scr.fit()
+    print("=== MixedLM Results: SCR Frequency ===")
+    print(results_scr.summary())
+    results_scr.summary().tables[1].to_csv('LMM_SCR_Frequency_Results.csv')
+
+    # Interaction model
+    import statsmodels.api as sm
+    df_lmm = master_df.copy()
+    df_lmm = df_lmm[df_lmm['Segment'].str.contains('nf')]
+    df_lmm['Modality'] = df_lmm['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
+    # Convert numeric and Drop NaNs
+    df_lmm['EDA_Tonic_Mean'] = pd.to_numeric(df_lmm['EDA_Tonic_Mean'], errors='coerce')
+        # --- THE "REBIRTH" FIX START ---
+    # We drop NaNs, then reset the index, then CREATE A NEW DF
+    # to break any hidden links to the original 39-row indices.
+    clean_df = df_lmm.dropna(subset=['EDA_Tonic_Mean']).copy()
+    clean_df = clean_df.reset_index(drop=True)
+    # Re-initialize the Participant column as a clean string list
+    clean_df['Participant'] = clean_df['Participant'].astype(str)
+    # --- THE "REBIRTH" FIX END ---
+    #MANUALLY BUILD THE MATRICES (Bypassing from_formula)
+    # y = Dependent Variable
+    y = clean_df['EDA_Tonic_Mean']
+    # X = Independent Variables (Fixed Effects)
+    # We create dummy variables for Modality and Group, then add an Intercept
+    X = pd.get_dummies(clean_df[['Modality', 'Experiment_Group']], drop_first=True, dtype=float)
+    X = sm.add_constant(X) # This is your Intercept
+    # FIT THE MODEL DIRECTLY
+    # We pass 'y', 'X', and 'groups' as raw arrays to ensure NO index mismatch
+    model_int = sm.MixedLM(y, X, groups=clean_df["Participant"])
+    results_int = model_int.fit()
+    # Display Summary
+    # Note: Column names will be numeric indices (0, 1, 2...) in the summary
+    # You can rename them using the column names from X
+    print("=== Interaction Model Results: EDA Tonic ===")
+    print(results_int.summary())
+    # Export
+    results_int.summary().tables[1].to_csv('LMM_Final_Interaction_Manual.csv')
+
+    # 1. THE "REBIRTH": Reset everything to exactly 0 to 37
+    clean_df = master_df.copy()
+    clean_df = clean_df[clean_df['Segment'].str.contains('nf')]
+    clean_df['Modality'] = clean_df['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
+    clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
+    clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
+    # 2. MANUALLY BUILD X (to include interactions)
+    X = pd.get_dummies(clean_df[['Modality', 'Experiment_Group']], drop_first=True, dtype=float)
+    # Add the manual interaction terms (e.g., VR_x_Group4)
+    for col in [c for c in X.columns if 'Experiment_Group' in c]:
+        group_num = col.split('_')[-1]
+        X[f'VR_x_{group_num}'] = X['Modality_VR'] * X[col]
+    X = sm.add_constant(X)
+    # 3. FIT THE MODEL (Passing the DataFrame X keeps the names!)
+    # We use clean_df['Participant'] as the groups
+    model_int = sm.MixedLM(clean_df['EDA_Tonic_Mean'], X, groups=clean_df["Participant"])
+    results_int = model_int.fit()
+    # 4. Print Summary (No arguments needed, it uses X.columns automatically)
+    print("=== FINAL INTERACTION MODEL: EDA TONIC ===")
+    print(results_int.summary())
+    # Export the table
+    results_int.summary().tables[1].to_csv('LMM_Final_Interaction_Report.csv')
+
+    # 1. Extract coefficients from your results_int object
+    coeffs = results_int.params
+    # 2. Calculate the "VR Effect" (Simple Slope) for each group
+    slopes = {
+        "Group 1": coeffs["Modality_VR"],
+        "Group 2": coeffs["Modality_VR"] + coeffs["VR_x_Group2"],
+        "Group 3": coeffs["Modality_VR"] + coeffs["VR_x_Group3"],
+        "Group 4": coeffs["Modality_VR"] + coeffs["VR_x_Group4"]
+    }
+    # 3. Create a clean Summary Table
+    simple_slopes_df = pd.DataFrame.from_dict(slopes, orient='index', columns=['VR_Effect_Size'])
+    print("=== SIMPLE SLOPES: The VR vs 2D Effect per Group ===")
+    print(simple_slopes_df)
+
+    # 1. Set the visual style
+    sns.set_theme(style="whitegrid")
+    plt.figure(figsize=(10, 6))
+    # 2. Create the interaction plot
+    # x = Groups, y = EDA Metric, hue = Modality (VR vs 2D)
+    ax = sns.pointplot(
+        data=df_lmm,
+        x='Experiment_Group',
+        y='EDA_Tonic_Mean',
+        hue='Modality',
+        markers=["o", "s"],
+        linestyles=["-", "--"],
+        capsize=.1,
+        palette={"VR": "#e74c3c", "2D": "#3498db"} # Red for VR, Blue for 2D
+    )
+    # 3. Add a horizontal line at 0 if you are plotting Deltas
+    # (Optional: only if y is 'Delta', otherwise skip this)
+    # plt.axhline(0, color='black', linestyle=':', alpha=0.5)
+    # 4. Customise the labels
+    plt.title("The Modality x Group Interaction: Paradoxical VR Effect", fontsize=14, pad=20)
+    plt.ylabel("EDA Tonic Mean (μS)", fontsize=12)
+    plt.xlabel("Experiment Group", fontsize=12)
+    plt.legend(title="Modality", frameon=True)
+    # 5. Annotate Group 4 (PB12)
+    plt.annotate('Highest VR Arousal', xy=(3, 9.5), xytext=(2.2, 11),
+                 arrowprops=dict(facecolor='black', shrink=0.05),
+                 fontsize=10, color='red', weight='bold')
+    # 6. Save the plot for your report
+    plt.tight_layout()
+    plt.savefig("Interaction_Plot_VR_vs_2D.png", dpi=300)
+    #plt.show()
 
     return 0
 
