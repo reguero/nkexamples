@@ -4,6 +4,7 @@ import bioread
 import numpy as np
 import pandas as pd
 import neurokit2 as nk
+import seaborn as sns
 import matplotlib.pyplot as plt
 import os
 import pickle
@@ -283,35 +284,20 @@ def delta(orig, dest, df):
     return deltas
 
 def main():
-    #fdatas = {}
-    #labeled_files = os.listdir('RAW_data/labeled')
-    #for lbfile in sort_filelist(labeled_files):
-    #    if lbfile.endswith(".acq"):
-    #       filename = lbfile.removesuffix(".acq")
-    #       print(filename)
-    #       fdata = Filedata(filename)
-    #       fdata.preparedata()
-    #       fdatas[filename] = fdata
-    # Pickling (serializing) to a file
-    #with open('dataframes.pkl', 'wb') as f:
-    #    pickle.dump(fdatas, f)
-
     # Unpickling (deserializing) from a file
-    #with open('dfmasterV0.pkl', 'rb') as f:
     with open('dfmaster.pkl', 'rb') as f:
         master_df = pickle.load(f)
-
     # Fix PB12 with values from B12-partie_2
-    # 1. Define the segments to be replaced
+    # Define the segments to be replaced
     target_segments = ['stress2_MIST', 'nf2_2D']
-    # 2. Extract the "Source" data (from PB12-partie_2)
+    # Extract the "Source" data (from PB12-partie_2)
     # We make a .copy() to avoid modifying the original dataframe accidentally
     source_data = master_df[
         (master_df['Participant'] == 'PB12-partie_2') &
         (master_df['Segment'].isin(target_segments))].copy()
-    # 3. Change the ID in the source data to match the "Target" (PB12)
+    # Change the ID in the source data to match the "Target" (PB12)
     source_data['Participant'] = 'PB12'
-    # 4. Remove the "Old/Corrupt" segments from the target (PB12)
+    # Remove the "Old/Corrupt" segments from the target (PB12)
     # This prevents the 'Duplicate entries' error in your delta function
     master_df = master_df.drop(
         master_df[
@@ -319,60 +305,26 @@ def main():
             (master_df['Segment'].isin(target_segments))
         ].index
     )
-    # 5. Append the "New" data from PB12-partie_2 into the master dataframe
+    # Append the "New" data from PB12-partie_2 into the master dataframe
     master_df = pd.concat([master_df, source_data], ignore_index=True)
     ## 6. Optional: Remove the temporary 'PB12-partie_2' rows if you no longer need them
     master_df = master_df[master_df['Participant'] != 'PB12-partie_2']
     print("Final segments for PB12:")
     print(master_df.query("Participant == 'PB12'")['Segment'].unique())
 
-
-    print(master_df)
-    print(master_df.columns)
-    print(master_df.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk', 'Participant', 'Segment']])
-    ## Quick summary of all participants
-    #print(master_df['EDA_Tonic_Mean'].describe())
-    #print(master_df.groupby('Participant')['EDA_Tonic_Mean'])
-    #print(master_df.groupby('Participant')['EDA_Tonic_Mean'].describe())
-    #summary = master_df.groupby('Participant')[['EDA_Tonic_Mean', 'HRV_RMSSD', 'Sympathetic_Percent']].mean()
-    #print("Average Physiological Shift:")
-    #print(summary)
+    #print(master_df)
+    #print(master_df.columns)
+    #print(master_df.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk', 'Participant', 'Segment']])
 
     # Unpickling (deserializing) from a file
     #with open('dfmasterV0.pkl', 'rb') as f:
     with open('results.pkl', 'rb') as f:
         fdatas = pickle.load(f)
 
-    #print(master_df.groupby('Participant')['EDA_Tonic_Mean'])
-    #for fnam, fdat in fdatas.items():
-    #    print('\nFile {0}:'.format(fnam))
-    #    for name, seg in fdat.segments.items():
-    #        ECG_report(seg.df, name, fdat, fnam)
-    #        EDA_report(seg.df, name, fdat, fnam)
-    #        pass
-
-    ## Pickling (serializing) to a file
-    #with open('results.pkl', 'wb') as f:
-    #    pickle.dump(fdatas, f)
-    
-    for fnam, fdat in fdatas.items():
-        print('\nFile {0}:'.format(fnam))
-        #print(fdat.analyze)
-        #print(fdat.segments.keys())
-        segnames = []
-        for name, seg in fdat.segments.items():
-            segnames.append(name)
-            #if seg.marker_inside_index != 0:
-            #    print(seg.marker_inside_index)
-            #    print('segment: [{0}] before: [{1}] next [{2}] start [{3}] end [{4}] marker_inside label[{5}] marker_inside index [{6}]'.format(name, seg.before, seg.after, seg.start_index, seg.end_index, seg.marker_inside_text, seg.marker_inside_index))
-            #else:
-            #    print('segment: [{0}] before: [{1}] next [{2}] start [{3}] end [{4}]'.format(name, seg.before, seg.after, seg.start_index, seg.end_index))
-        print(segnames)
-
     Group1 = ['PB2', 'PB19', 'PB23', 'PB24']
-    Group2 = ['PB4', 'PB13', 'PB15', 'PB17', 'PB21']
-    Group3 = ['PB3', 'PB5', 'PB22', 'PB26', 'PB27']
-    Group4 = ['PB7', 'PB14', 'PB16', 'PB25', 'PB12']
+    Group4 = ['PB4', 'PB13', 'PB15', 'PB17', 'PB21']
+    Group2 = ['PB3', 'PB5', 'PB22', 'PB26', 'PB27']
+    Group3 = ['PB7', 'PB14', 'PB16', 'PB25', 'PB12']
     # 1. Create a mapping dictionary
     group_map = {}
     for pb in Group1: group_map[pb] = 'Group1'
@@ -382,43 +334,11 @@ def main():
     # 2. Add the column to your master_df
     master_df['Experiment_Group'] = master_df['Participant'].map(group_map)
 
-    outcome = {}
-    #outcome['Group1'] = {}
-    #outcome['Group2'] = {}
-    #outcome['Group3'] = {}
-    #outcome['Group4'] = {}
-
-    #for fnam in Group1:
-    #    print('\nGroup1 {0}:'.format(fnam))
-    #    #print(fdatas[fnam].segments.keys())
-    #    fnam_df = master_df[master_df['Participant'] == fnam]
-    #    outcome['Group1'+':_'+'stress1_MIST'+'_'+'nf1_VR'] = delta('stress1_MIST', 'nf1_VR', fnam_df)
-    #    outcome['Group1'+':_'+'stress2_ABBA'+'_'+'nf2_2D'] = delta('stress2_ABBA', 'nf2_2D', fnam_df)
-    #for fnam in Group2:
-    #    print('\nGroup2 {0}:'.format(fnam))
-    #    #print(fdatas[fnam].segments.keys())
-    #    fnam_df = master_df[master_df['Participant'] == fnam]
-    #    outcome['Group2'+':_'+'stress1_ABBA'+'_'+'nf1_2D'] = delta('stress1_ABBA', 'nf1_2D', fnam_df)
-    #    outcome['Group2'+':_'+'stress2_MIST'+'_'+'nf2_VR'] = delta('stress2_MIST', 'nf2_VR', fnam_df)
-    #for fnam in Group3:
-    #    print('\nGroup3 {0}:'.format(fnam))
-    #    #print(fdatas[fnam].segments.keys())
-    #    fnam_df = master_df[master_df['Participant'] == fnam]
-    #    outcome['Group3'+':_'+'stress1_MIST'+'_'+'nf1_2D'] = delta('stress1_MIST', 'nf1_2D', fnam_df)
-    #    outcome['Group3'+':_'+'stress2_ABBA'+'_'+'nf2_VR'] = delta('stress2_ABBA', 'nf2_VR', fnam_df)
-    #for fnam in Group4:
-    #    print('\nGroup4 {0}:'.format(fnam))
-    #    #print(fdatas[fnam].segments.keys())
-    #    fnam_df = master_df[master_df['Participant'] == fnam]
-    #    outcome['Group4'+':_'+'stress1_ABBA'+'_'+'nf1_VR'] = delta('stress1_ABBA', 'nf1_VR', fnam_df)
-    #    outcome['Group4'+':_'+'stress2_MIST'+'_'+'nf2_2D'] = delta('stress2_MIST', 'nf2_2D', fnam_df)
- 
-    # Mapping: Group_Name: [(Orig1, Dest1), (Orig2, Dest2)]
     group_configs = {
         'Group1': [('stress1_MIST', 'nf1_VR'), ('stress2_ABBA', 'nf2_2D')],
-        'Group2': [('stress1_ABBA', 'nf1_2D'), ('stress2_MIST', 'nf2_VR')],
-        'Group3': [('stress1_MIST', 'nf1_2D'), ('stress2_ABBA', 'nf2_VR')],
-        'Group4': [('stress1_ABBA', 'nf1_VR'), ('stress2_MIST', 'nf2_2D')]
+        'Group4': [('stress1_ABBA', 'nf1_2D'), ('stress2_MIST', 'nf2_VR')],
+        'Group2': [('stress1_MIST', 'nf1_2D'), ('stress2_ABBA', 'nf2_VR')],
+        'Group3': [('stress1_ABBA', 'nf1_VR'), ('stress2_MIST', 'nf2_2D')]
     }
     results_storage = {}
 
@@ -471,93 +391,118 @@ def main():
         # Highlight significant results (p < 0.05)
         print(summary_df.sort_values(by='p_val'))
 
-    #        # 4. Perform Paired T-Test
-    #        # This tests if the "Quietness" achieved in T1 is different from T2
-    #        stats = pg.ttest(t1_group, t2_group, paired=True)
-    #        #print(stats)
-    #        print(f"\n=== {group_name} Comparison: {metric} ===")
-    #        print(f"Mean Delta T1: {t1_group.mean():.2f} peaks/min")
-    #        print(f"Mean Delta T2: {t2_group.mean():.2f} peaks/min")
-    #        p_value = stats.at['T_test', 'p_val']
-    #        cohen_d = stats.at['T_test', 'cohen_d']
-    #        print(f"P-value: {p_value:.4f} | Cohen's d: {cohen_d:.2f}")
-    #        #print(f"P-value: {stats['p_val'].values[0]:.4f} | Cohen's d: {stats['cohen_d'].values[0]:.2f}")
+    # Define which segments are VR and which are 2D based on your study design
+    vr_segments = ['nf1_VR', 'nf2_VR']
+    two_d_segments = ['nf1_2D', 'nf2_2D']
+    all_summary_rows = []
+    for group_name, configs in group_configs.items():
+        group_list = eval(group_name)
+        for (orig, dest) in configs:
+            # 1. Get the deltas for this specific transition
+            current_deltas = delta(orig, dest, master_df)
+            # 2. Filter for group members
+            group_deltas = current_deltas.loc[current_deltas.index.isin(group_list)]
+            # 3. Label the modality (VR or 2D)
+            modality = 'VR' if dest in vr_segments else '2D'
+            # 4. Calculate the average for each metric
+            for metric in metrics:
+                all_summary_rows.append({
+                    'Group': group_name,
+                    'Modality': modality,
+                    'Metric': metric,
+                    'Mean_Delta': group_deltas[metric].mean(),
+                    'Std_Error': group_deltas[metric].sem(),
+                    'N': len(group_deltas)
+                })
+    # Convert to DataFrame
+    summary_df = pd.DataFrame(all_summary_rows)
+    # Create a Pivot Table for the final report
+    final_report = summary_df.pivot_table(
+        index='Metric',
+        columns='Modality',
+        values='Mean_Delta',
+        aggfunc='mean'
+    )
+    print("=== FINAL COMPARISON: VR vs 2D RELAXATION (Across All Groups) ===")
+    print(final_report)
 
-    ## 1. Get the deltas for everyone
-    #all_deltas = delta('stress1_ABBA', 'nf1_VR', master_df)
-    ## 2. Select just Group 4 (which includes PB12)
-    ## Since Participant is the index of the delta output, use .loc
-    #group4_deltas = all_deltas.loc[all_deltas.index.isin(Group4)]
-    #print(group4_deltas)
-    #print("Average Stress Response stress1_ABBA-nf1_VR for Group 4:")
-    #print(group4_deltas.mean())
-    ## Quick summary by Group
-    #summary = master_df.groupby(['Experiment_Group', 'Segment'])['SCR_Frequency_PerMin'].mean()
-    #print(summary)
-    #for o in outcome:
-    #     print('\nOutcome for {0}: {1}'.format(o, outcome[o]))
+    # Filter for just the most important metrics
+    plot_metrics = ['EDA_Tonic_Mean', 'SCR_Frequency_PerMin', 'HRV_RMSSD']
+    df_plot = summary_df[summary_df['Metric'].isin(plot_metrics)]
+    sns.barplot(data=df_plot, x='Metric', y='Mean_Delta', hue='Modality')
+    plt.title("Physiological Recovery: VR vs 2D")
+    #plt.show()
+    fig = plt.gcf()
+    fig.savefig("Physiological_Recovery_VR_vs_2D.png")
+    plt.close()
 
-    #for fnam, fdat in fdatas.items():
-    #    print('\nFile {0}:'.format(fnam))
-    #    segnames = []
-    #    for name, seg in fdat.segments.items():
-    #        segnames.append(name)
-    #    print(segnames)
+    # Prepare to collect all data points
+    vr_pool = []
+    two_d_pool = []
+    for group_name, configs in group_configs.items():
+        group_list = eval(group_name)
+        for (orig, dest) in configs:
+            # Get deltas for this specific transition
+            current_deltas = delta(orig, dest, master_df)
+            # Filter for the relevant group members
+            group_deltas = current_deltas.loc[current_deltas.index.isin(group_list)].copy()
+            # Assign a modality label
+            if 'VR' in dest:
+                vr_pool.append(group_deltas)
+            elif '2D' in dest:
+                two_d_pool.append(group_deltas)
+    # Create the Pooled DataFrames
+    df_vr = pd.concat(vr_pool)
+    df_two_d = pd.concat(two_d_pool)
+    # Calculate T-Tests for every metric
+    final_results = []
+    for m in metrics:
+        # We use independent t-test (not paired) because we are pooling across different sessions/people
+        res = pg.ttest(df_vr[m].dropna(), df_two_d[m].dropna(), paired=False)
+        final_results.append({
+            'Metric': m,
+            'Mean_VR': df_vr[m].mean(),
+            'Mean_2D': df_two_d[m].mean(),
+            'p_val': res.at['T_test', 'p_val'],
+            'cohen_d': res.at['T_test', 'cohen_d'],
+            'Significant': 'YES' if res.at['T_test', 'p_val'] < 0.05 else 'no'
+        })
+    # Display the Final Summary
+    final_summary_df = pd.DataFrame(final_results).sort_values('p_val')
+    print("=== FINAL POOLED COMPARISON: VR vs 2D MODALITY ===")
+    print(final_summary_df)
 
-    ## Check what segments actually exist in the source
-    #print("Available segments in PB12-partie_2:")
-    #print(master_df.query("Participant == 'PB12-partie_2'")['Segment'].unique())
+    # Define the output path
+    file_name = 'Study_Results.xlsx'
+    with pd.ExcelWriter(file_name, engine='openpyxl') as writer:
+        # Save the raw Master DataFrame
+        master_df.to_excel(writer, sheet_name='Raw_Data', index=False)
+        # Save the Final Pooled Comparison (VR vs 2D)
+        # final_summary_df is the one we created in the last step
+        final_summary_df.to_excel(writer, sheet_name='Final_Stats', index=False)
+        # Save Group-specific results
+        # You can loop through your groups to add them as individual sheets
+        for group_name in ['Group1', 'Group2', 'Group3', 'Group4']:
+            group_data = master_df[master_df['Experiment_Group'] == group_name]
+            group_data.to_excel(writer, sheet_name=f'Data_{group_name}', index=False)
+    print(f"Successfully exported all results to {file_name}")
 
-    ##for g, v in outcome.items():
-    #for g in ['Group1', 'Group2', 'Group3', 'Group4']:
-    #    for g, v in outcome[g].items():
-    #        for k in v:
-    #            print('\nOutcome for {0}: {1}:\n{2}'.format(g, k, v[k]))
+    # Save the full processed dataset (Long Format)
+    # This includes every participant, segment, and NeuroKit2 metric
+    master_df.to_csv('Master_Data.csv', index=False)
+    # Save the final statistical comparison (VR vs 2D)
+    # This contains your p-values and Cohen's d effect sizes
+    final_summary_df.to_csv('Final_Statistical_Results_VR_vs_2D.csv', index=False)
+    # Save the Delta values (the actual change scores)
+    # This is useful for creating plots in other software like R or SPSS
+    all_deltas.to_csv('Participant_Deltas_Summary.csv', index=True)
+    # Save Group-specific results
+    # You can loop through your groups to add them as individual sheets
+    for group_name in ['Group1', 'Group2', 'Group3', 'Group4']:
+        group_data = master_df[master_df['Experiment_Group'] == group_name]
+        group_data.to_csv(f'Data_{group_name}.csv', index=False)
+    print("CSVs exported: Master_Physiology_Data.csv, Final_Statistical_Results_VR_vs_2D.csv and Data_* for groups")
 
-    ## Create a mask for the specific participant and segment
-    #mask = (master_df['Participant'] == 'PB26') & (master_df['Segment'] == 'stress1_MIST')
-
-    ## Apply the mask to see the full rows
-    #duplicates_pb26 = master_df[mask]
-
-    #print(duplicates_pb26)
-    #print('start = {0}'.format(fdatas['PB26'].segments['stress1_MIST'].start_index))
-    #print('end = {0}'.format(fdatas['PB26'].segments['stress1_MIST'].end_index))
-    #print('df = {0}'.format(len(fdatas['PB26'].segments['stress1_MIST'].df)))
-
-    ## Identify all rows that share a Participant and Segment
-    #all_dupes = master_df[master_df.duplicated(subset=['Participant', 'Segment'], keep=False)]
-
-    ## Sort them so they appear together for easy comparison
-    #print(all_dupes.sort_values(by=['Participant', 'Segment']))
-
-
-    #    #fdat.analyze_ecg['seg_name'] = segnames
-    #    #fdat.analyze_ecg.set_index('seg_name', inplace=True)
-    #    #fdat.analyze_eda['seg_name'] = segnames
-    #    #fdat.analyze_eda.set_index('seg_name', inplace=True)
-
-    #   #print(fdat.analyze_ecg)
-    #    print(fdat.analyze)
-    #    print(fdat.analyze.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk]])
-    #    #print(fdat.analyze_ecg.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD']])
-    #    #print(fdat.analyze_eda.loc[:, ['EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']])
-
-    #    #print('{0} {1}'.format(fdat.analyze_ecg.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD']], fdat.analyze_eda.loc[:, ['EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']]))
-    #    #fdat.analyze_eda.loc[:, ['EDA_Tonic_SD', 'SCR_Peaks_Amplitude_MeanSCR_Peaks_Amplitude_Mean']]
-    #    #first = ""
-    #    #for name, seg in segments.items():
-    #    #    if seg.before == None:
-    #    #        first = name
-    #    #        break
-    #    #seg = segments[first]
-    #    #while True:
-    #    #    print(seg.name)
-    #    #    if seg.after == None:
-    #    #        break
-    #    #    seg = segments[seg.after]
-    #    #In Python 3.6+ dictionaries preserve insertion order.
-    #    #sys.exit(0)
     return 0
 
 if __name__ == "__main__":
