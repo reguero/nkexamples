@@ -254,6 +254,33 @@ def sort_filelist(l):
     l.sort(key=alphanum)
     return l
 
+def delta(orig, dest, df):
+    ### Create a mask for the specific participant and segment
+    ##mask = (df['Participant'] == 'PB26') & (df['Segment'] == 'stress1_MIST')
+
+    ### Apply the mask to see the full rows
+    ##duplicates_pb26 = df[mask]
+
+    ##print(duplicates_pb26)
+
+    # List of columns to analyze
+    metrics = ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk']
+
+    # Pivot - this creates a DataFrame where columns are (Metric, Segment)
+    pivoted_all = df.pivot(index='Participant', columns='Segment', values=metrics)
+    #print(pivoted_all)
+
+    # Subtract the entire 'orig' slice from the 'dest' slice
+    # .xs (cross-section) allows us to select all metrics for one specific Segment
+    df_dest = pivoted_all.xs(dest, axis=1, level='Segment')
+    df_orig = pivoted_all.xs(orig, axis=1, level='Segment')
+    
+    deltas = df_dest - df_orig
+    
+    print(f"Deltas from {orig} to {dest}:")
+    print(deltas)
+    return deltas
+
 def main():
     #fdatas = {}
     #labeled_files = os.listdir('RAW_data/labeled')
@@ -269,9 +296,27 @@ def main():
     #    pickle.dump(fdatas, f)
 
     # Unpickling (deserializing) from a file
+    #with open('dfmasterV0.pkl', 'rb') as f:
+    with open('dfmaster.pkl', 'rb') as f:
+        master_df = pickle.load(f)
+
+    print(master_df)
+    print(master_df.columns)
+    print(master_df.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk', 'Participant', 'Segment']])
+    # Quick summary of all participants
+    print(master_df['EDA_Tonic_Mean'].describe())
+    #print(master_df.groupby('Segment')['EDA_Tonic_Mean'])
+    print(master_df.groupby('Participant')['EDA_Tonic_Mean'].describe())
+    summary = master_df.groupby('Participant')[['EDA_Tonic_Mean', 'HRV_RMSSD', 'Sympathetic_Percent']].mean()
+    print("Average Physiological Shift:")
+    print(summary)
+
+    # Unpickling (deserializing) from a file
+    #with open('dfmasterV0.pkl', 'rb') as f:
     with open('results.pkl', 'rb') as f:
         fdatas = pickle.load(f)
 
+    #print(master_df.groupby('Participant')['EDA_Tonic_Mean'])
     #for fnam, fdat in fdatas.items():
     #    print('\nFile {0}:'.format(fnam))
     #    for name, seg in fdat.segments.items():
@@ -285,40 +330,103 @@ def main():
     
     for fnam, fdat in fdatas.items():
         print('\nFile {0}:'.format(fnam))
+        print(fdat.analyze)
+        #print(fdat.segments.keys())
         segnames = []
         for name, seg in fdat.segments.items():
             segnames.append(name)
-            if seg.marker_inside_index != 0:
-                #print(seg.marker_inside_index)
-                print('segment: [{0}] before: [{1}] after [{2}] start [{3}] end [{4}] marker_inside label[{5}] marker_inside index [{6}]'.format(name, seg.before, seg.after, seg.start_index, seg.end_index, seg.marker_inside_text, seg.marker_inside_index))
-            else:
-                print('segment: [{0}] before: [{1}] after [{2}] start [{3}] end [{4}]'.format(name, seg.before, seg.after, seg.start_index, seg.end_index))
-        #fdat.analyze_ecg['seg_name'] = segnames
-        #fdat.analyze_ecg.set_index('seg_name', inplace=True)
-        #fdat.analyze_eda['seg_name'] = segnames
-        #fdat.analyze_eda.set_index('seg_name', inplace=True)
+            #if seg.marker_inside_index != 0:
+            #    print(seg.marker_inside_index)
+            #    print('segment: [{0}] before: [{1}] next [{2}] start [{3}] end [{4}] marker_inside label[{5}] marker_inside index [{6}]'.format(name, seg.before, seg.after, seg.start_index, seg.end_index, seg.marker_inside_text, seg.marker_inside_index))
+            #else:
+            #    print('segment: [{0}] before: [{1}] next [{2}] start [{3}] end [{4}]'.format(name, seg.before, seg.after, seg.start_index, seg.end_index))
+        print(segnames)
 
-        #print(fdat.analyze_ecg)
-        print(fdat.analyze)
-        print(fdat.analyze.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk]])
-        #print(fdat.analyze_ecg.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD']])
-        #print(fdat.analyze_eda.loc[:, ['EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']])
+    Group1 = ['PB2', 'PB19', 'PB23', 'PB24']
+    Group2 = ['PB4', 'PB13', 'PB15', 'PB17', 'PB21']
+    Group3 = ['PB3', 'PB5', 'PB22', 'PB26', 'PB27']
+    Group4 = ['PB7', 'PB14', 'PB16', 'PB25']
+    outcome = {}
+    outcome['Group1'] = {}
+    outcome['Group2'] = {}
+    outcome['Group3'] = {}
+    outcome['Group4'] = {}
 
-        #print('{0} {1}'.format(fdat.analyze_ecg.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD']], fdat.analyze_eda.loc[:, ['EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']]))
-        #fdat.analyze_eda.loc[:, ['EDA_Tonic_SD', 'SCR_Peaks_Amplitude_MeanSCR_Peaks_Amplitude_Mean']]
-        #first = ""
-        #for name, seg in segments.items():
-        #    if seg.before == None:
-        #        first = name
-        #        break
-        #seg = segments[first]
-        #while True:
-        #    print(seg.name)
-        #    if seg.after == None:
-        #        break
-        #    seg = segments[seg.after]
-        #In Python 3.6+ dictionaries preserve insertion order.
-        #sys.exit(0)
+    for fnam in Group1:
+        print('\nGroup1 {0}:'.format(fnam))
+        #print(fdatas[fnam].segments.keys())
+        fnam_df = master_df[master_df['Participant'] == fnam]
+        outcome['Group1']['stress1_MIST'+'_'+'nf1_VR'] = delta('stress1_MIST', 'nf1_VR', fnam_df)
+        outcome['Group1']['stress2_ABBA'+'_'+'nf2_2D'] = delta('stress2_ABBA', 'nf2_2D', fnam_df)
+    for fnam in Group2:
+        print('\nGroup2 {0}:'.format(fnam))
+        #print(fdatas[fnam].segments.keys())
+        fnam_df = master_df[master_df['Participant'] == fnam]
+        outcome['Group2']['stress1_ABBA'+'_'+'nf1_2D'] = delta('stress1_ABBA', 'nf1_2D', fnam_df)
+        outcome['Group2']['stress2_MIST'+'_'+'nf2_VR'] = delta('stress2_MIST', 'nf2_VR', fnam_df)
+    for fnam in Group3:
+        print('\nGroup3 {0}:'.format(fnam))
+        #print(fdatas[fnam].segments.keys())
+        fnam_df = master_df[master_df['Participant'] == fnam]
+        outcome['Group3']['stress1_MIST'+'_'+'nf1_2D'] = delta('stress1_MIST', 'nf1_2D', fnam_df)
+        outcome['Group3']['stress2_ABBA'+'_'+'nf2_VR'] = delta('stress2_ABBA', 'nf2_VR', fnam_df)
+    for fnam in Group4:
+        print('\nGroup4 {0}:'.format(fnam))
+        #print(fdatas[fnam].segments.keys())
+        fnam_df = master_df[master_df['Participant'] == fnam]
+        outcome['Group4']['stress1_ABBA'+'_'+'nf1_VR'] = delta('stress1_ABBA', 'nf1_VR', fnam_df)
+        outcome['Group4']['stress2_MIST'+'_'+'nf2_2D'] = delta('stress2_MIST', 'nf2_2D', fnam_df)
+ 
+    #for g, v in outcome.items():
+    for g in ['Group1', 'Group2', 'Group3', 'Group4']:
+        for g, v in outcome[g].items():
+            for k in v:
+                print('\nOutcome for {0}: {1}:\n{2}'.format(g, k, v[k]))
+
+    ## Create a mask for the specific participant and segment
+    #mask = (master_df['Participant'] == 'PB26') & (master_df['Segment'] == 'stress1_MIST')
+
+    ## Apply the mask to see the full rows
+    #duplicates_pb26 = master_df[mask]
+
+    #print(duplicates_pb26)
+    #print('start = {0}'.format(fdatas['PB26'].segments['stress1_MIST'].start_index))
+    #print('end = {0}'.format(fdatas['PB26'].segments['stress1_MIST'].end_index))
+    #print('df = {0}'.format(len(fdatas['PB26'].segments['stress1_MIST'].df)))
+
+    ## Identify all rows that share a Participant and Segment
+    #all_dupes = master_df[master_df.duplicated(subset=['Participant', 'Segment'], keep=False)]
+
+    ## Sort them so they appear together for easy comparison
+    #print(all_dupes.sort_values(by=['Participant', 'Segment']))
+
+
+    #    #fdat.analyze_ecg['seg_name'] = segnames
+    #    #fdat.analyze_ecg.set_index('seg_name', inplace=True)
+    #    #fdat.analyze_eda['seg_name'] = segnames
+    #    #fdat.analyze_eda.set_index('seg_name', inplace=True)
+
+    #   #print(fdat.analyze_ecg)
+    #    print(fdat.analyze)
+    #    print(fdat.analyze.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk]])
+    #    #print(fdat.analyze_ecg.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD']])
+    #    #print(fdat.analyze_eda.loc[:, ['EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']])
+
+    #    #print('{0} {1}'.format(fdat.analyze_ecg.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD']], fdat.analyze_eda.loc[:, ['EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']]))
+    #    #fdat.analyze_eda.loc[:, ['EDA_Tonic_SD', 'SCR_Peaks_Amplitude_MeanSCR_Peaks_Amplitude_Mean']]
+    #    #first = ""
+    #    #for name, seg in segments.items():
+    #    #    if seg.before == None:
+    #    #        first = name
+    #    #        break
+    #    #seg = segments[first]
+    #    #while True:
+    #    #    print(seg.name)
+    #    #    if seg.after == None:
+    #    #        break
+    #    #    seg = segments[seg.after]
+    #    #In Python 3.6+ dictionaries preserve insertion order.
+    #    #sys.exit(0)
     return 0
 
 if __name__ == "__main__":

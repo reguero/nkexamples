@@ -211,15 +211,14 @@ def ECG_report(seg, name, fdat, fnam):
     # Flatten the columns if they are nested lists
     for col in analyze_df.columns:
         analyze_df[col] = analyze_df[col].apply(lambda x: x[0][0] if isinstance(x, (list, np.ndarray)) else x)
-    # Add Segment Label
-    analyze_df['Segment_Label'] = name
     print('ECG analyze output of segment {0}.{1}:'.format(fnam, name))
     print(analyze_df)
-    if name =='baseline'or (name == 'stress2_ABBA' and fnam == 'PB1_only_part2'):
-        fdat.analyze_ecg = analyze_df
-    else:
-        #fdat.analyze_ecg = fdat.analyze_ecg.append(analyze_df)
-        fdat.analyze_ecg = pd.concat([fdat.analyze_ecg, analyze_df], ignore_index=True)
+    fdat.analyze_ecg = analyze_df
+    #if name =='baseline'or (name == 'stress2_ABBA' and fnam == 'PB1_only_part2'):
+    #    fdat.analyze_ecg = analyze_df
+    #else:
+    #    #fdat.analyze_ecg = fdat.analyze_ecg.append(analyze_df)
+    #    fdat.analyze_ecg = pd.concat([fdat.analyze_ecg, analyze_df], ignore_index=True)
     #for col in analyze_df:
     #    print(col)
     print(analyze_df['HRV_MeanNN'].apply(lambda x: np.array(x).flatten()[0]))
@@ -251,18 +250,13 @@ def EDA_report(seg, name, fdat, fnam):
     analyze_df['SCR_Frequency_PerMin'] = analyze_df['SCR_Peaks_N'] / duration_min
     # Scale the Sympathetic index to be more readable (Percentage)
     analyze_df['Sympathetic_Percent'] = analyze_df['EDA_SympatheticN'] * 100
-    # Add Segment Label
-    analyze_df['Segment_Label'] = name
-    #Add participant
-    analyze_df['Participant'] = fnam
-    # Add time in limited duration block
-    analyze_df['Unlim_Duration_Blk'] = Unlimited_duration_block(seg, name, fdat, fnam)
     print(analyze_df)
-    if name =='baseline'or (name == 'stress2_ABBA' and fnam == 'PB1_only_part2'):
-        fdat.analyze_eda = analyze_df
-    else:
-        #fdat.analyze_eda = fdat.analyze_eda.append(analyze_df)
-        fdat.analyze_eda = pd.concat([fdat.analyze_eda, analyze_df], ignore_index=True)
+    fdat.analyze_eda = analyze_df
+    #if name =='baseline'or (name == 'stress2_ABBA' and fnam == 'PB1_only_part2'):
+    #    fdat.analyze_eda = analyze_df
+    #else:
+    #    #fdat.analyze_eda = fdat.analyze_eda.append(analyze_df)
+    #    fdat.analyze_eda = pd.concat([fdat.analyze_eda, analyze_df], ignore_index=True)
 
 def Unlimited_duration_block(seg, name, fdat, fnam):
     unlimited_duration_sec = 0
@@ -302,16 +296,28 @@ def main():
         for name, seg in fdat.segments.items():
             ECG_report(seg, name, fdat, fnam)
             EDA_report(seg, name, fdat, fnam)
-
-        fdat.analyze_ecg.set_index('Segment_Label', inplace=True)
-        fdat.analyze_eda.set_index('Segment_Label', inplace=True)
-        fdat.analyze = pd.concat([fdat.analyze_eda, fdat.analyze_ecg], axis=1)
-        # Drop duplicated columns
-        fdat.analyze = fdat.analyze.loc[:, ~fdat.analyze.columns.duplicated()]
+            # Merge DFs
+            fdat.analyze = pd.concat([fdat.analyze_eda, fdat.analyze_ecg], axis=1)
+            # Drop duplicated columns
+            fdat.analyze = fdat.analyze.loc[:, ~fdat.analyze.columns.duplicated()]
+            # Add Segment Label
+            fdat.analyze['Segment'] = name
+            #Add participant
+            fdat.analyze['Participant'] = fnam
+            # Add time in limited duration block
+            fdat.analyze['Unlim_Duration_Blk'] = Unlimited_duration_block(seg, name, fdat, fnam)
+            master_data.append(fdat.analyze)
+            #fdat.analyze.set_index('Segment_Label', inplace=True)
         print(fdat.analyze)
         # Drop original Dfs
         del fdat.analyze_ecg
         del fdat.analyze_eda
+
+    # Create the Master Dataframe
+    df_master = pd.concat(master_data, ignore_index=True)
+    # Pickling (serializing) to a file
+    with open('dfmaster.pkl', 'wb') as f:
+        pickle.dump(df_master, f)
 
     # Pickling (serializing) to a file
     with open('results.pkl', 'wb') as f:
