@@ -125,11 +125,7 @@ def ECG_report(df, name, fdat, fnam):
     analyze_df = nk.ecg_analyze(clean_signals, sampling_rate=1000)
     print('ECG analyze output of segment {0}.{1}:'.format(fnam, name))
     print(analyze_df)
-    if name =='baseline'or (name == 'stress2_ABBA' and fnam == 'PB1_only_part2'):
-        fdat.analyze_ecg = analyze_df
-    else:
-        #fdat.analyze_ecg = fdat.analyze_ecg.append(analyze_df)
-        fdat.analyze_ecg = pd.concat([fdat.analyze_ecg, analyze_df], ignore_index=True)
+    fdat.analyze_ecg = analyze_df
     #for col in analyze_df:
     #    print(col)
     print(analyze_df['HRV_MeanNN'].apply(lambda x: np.array(x).flatten()[0]))
@@ -153,12 +149,7 @@ def EDA_report(df, name, fdat, fnam):
     #print(info)
     analyze_df = nk.eda_analyze(signals, sampling_rate=1000)
     print(analyze_df)
-    if name =='baseline'or (name == 'stress2_ABBA' and fnam == 'PB1_only_part2'):
-        fdat.analyze_eda = analyze_df
-    else:
-        #fdat.analyze_eda = fdat.analyze_eda.append(analyze_df)
-        fdat.analyze_eda = pd.concat([fdat.analyze_eda, analyze_df], ignore_index=True)
-
+    fdat.analyze_eda = analyze_df
 
 def sort_filelist(l):
     import re
