@@ -10,67 +10,6 @@ import os
 import pickle
 import pingouin as pg
 
-#pd.options.display.max_columns = None
-#pd.options.display.max_rows = None
-
-#for filename in ['RAW_data/PB5.acq', 'RAW_data/PB12.acq', 'RAW_data/PB13.acq', 'RAW_data/PB17.acq']:
-#    file = bioread.read_file(filename)
-
-
-#filename = 'RAW_data/PB17.acq'
-#filename = 'RAW_data/PB5.acq'
-#filename = 'RAW_data/PB12.acq'
-#filename = 'RAW_data/PB13.acq'
-#file = bioread.read_file(filename)
-#file = bioread.read_file('RAW_data/PB12.acq')
-#file = bioread.read_file('RAW_data/PB13.acq')
-
-#print(file)
-#print(file.channels)
-#print(file.named_channels)
-
-#freq_list = []
-#for channel in file.named_channels:
-#       freq_list.append(file.named_channels[channel].samples_per_second)
-#sampling_rate = np.max(freq_list)
-
-#data = {}
-#for channel in file.named_channels:
-#    print(file.named_channels[channel])
-#    print(dir(file.named_channels[channel]))
-#    print(file.named_channels[channel].name)
-#    print(file.named_channels[channel].units)
-#    print(file.named_channels[channel].data)
-#    signal = np.array(file.named_channels[channel].data)
-#    data[channel] = signal
-
-# Final dataframe
-#df = pd.DataFrame(data)
-#print(sampling_rate)
-#print(df)
-
-#print(file.event_markers)
-#sample_index = {}
-#for m in file.event_markers:
-#    #print(dir(m))
-#    #print(str(m))
-#    #print(str(m.sample_index))
-#    #ooprint(str(df[m.sample_index]))
-#    print(f"Marker '{m.text}' at sample {m.sample_index}")
-#    #print(f"Marker '{m.text}' at time {m.time_index}")
-#    #print('{0}: Channel {1}, type {2}'.format(m.text, m.channel_name, m.type))
-#    #sample_index[m.text] = m.sample_index
-#    #for channel in file.named_channels:
-#    #   print(file.named_channels[channel].data[m.sample_index])
-
-#data = {}
-#for channel in file.named_channels:
-#    signal = np.array(file.named_channels[channel].data[sample_index['start ABBA']:sample_index['end ABBA']])
-#    #signal = np.array(file.named_channels[channel].data[sample_index['start ABBA']:sample_index['ABBA end']])
-#    data[channel] = signal
-#ABBA_df = pd.DataFrame(data)
-#print(ABBA_df)
-
 class Segment(object):
     def __init__(self, name, start_index_text, start_index, seg_before):
         self.name = name
@@ -175,34 +114,6 @@ class Filedata(object):
                                                                                            
 def ECG_report(df, name, fdat, fnam):
     print('Segment {0}.{1}:'.format(fnam, name))
-    #nk.signal_plot(df, subplots=True, sampling_rate=1000)
-    #fig = plt.gcf()
-    #fig.savefig("all_{0}.png".format(name))
-    #plt.close()
-
-    #print('ECG of segment {0}.{1}:'.format(fnam, name))
-    #nk.signal_plot(df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
-    #fig = plt.gcf()
-    #fig.savefig("ecg_{0}.png".format(name))
-    #plt.close()
-    # Find peaks
-    #peaks, info = nk.ecg_peaks(df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
-    # Compute HRV indices
-    #hrv = nk.hrv_time(peaks, sampling_rate=1000, show=True)
-    #fig = plt.gcf()
-    #fig.savefig("hrv_{0}_{1}.png".format(fnam, name))
-    #plt.close(fig)
-    #print('HRV of segment {0}.{1}:'.format(fnam, name))
-    #print(hrv)
-    #for col in hrv:
-    #    print(col)
-    #print(hrv['HRV_MeanNN'])
-    #print(hrv.iloc[0]['HRV_MeanNN'])
-    #print(hrv['HRV_SDNN'])
-    #print(hrv.iloc[0]['HRV_SDNN'])
-    #print(hrv['HRV_RMSSD'])
-    #print(hrv.iloc[0]['HRV_RMSSD'])
-
     # Preprocess ECG signal
     clean_signals, info = nk.ecg_process(df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
     # Visualize
@@ -257,14 +168,6 @@ def sort_filelist(l):
     return l
 
 def delta(orig, dest, df):
-    ### Create a mask for the specific participant and segment
-    ##mask = (df['Participant'] == 'PB26') & (df['Segment'] == 'stress1_MIST')
-
-    ### Apply the mask to see the full rows
-    ##duplicates_pb26 = df[mask]
-
-    ##print(duplicates_pb26)
-
     # List of columns to analyze
     metrics = ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk']
 
@@ -311,10 +214,6 @@ def main():
     master_df = master_df[master_df['Participant'] != 'PB12-partie_2']
     print("Final segments for PB12:")
     print(master_df.query("Participant == 'PB12'")['Segment'].unique())
-
-    #print(master_df)
-    #print(master_df.columns)
-    #print(master_df.loc[:, ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk', 'Participant', 'Segment']])
 
     # Unpickling (deserializing) from a file
     #with open('dfmasterV0.pkl', 'rb') as f:
