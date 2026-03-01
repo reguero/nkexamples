@@ -393,6 +393,76 @@ def main():
         group_data.to_csv(f'Data_{group_name}.csv', index=False)
     print("CSVs exported: Master_Physiology_Data.csv, Final_Statistical_Results_VR_vs_2D.csv and Data_* for groups")
 
+    # --- MONKEYPATCH START ---
+    _original_getitem = pd.DataFrame.__getitem__
+    def _patched_getitem(self, key):
+        # This specifically catches the [:, :2] call from Pymer4
+        if isinstance(key, tuple) and len(key) == 2:
+            if isinstance(key[0], slice) and isinstance(key[1], slice):
+                return self.iloc[key]
+        return _original_getitem(self, key)
+    pd.DataFrame.__getitem__ = _patched_getitem
+    # Fix the .unique() bug
+    if not hasattr(pd.DataFrame, 'unique'):
+        pd.DataFrame.unique = lambda self, maintain_order=True: self.drop_duplicates()
+    # Fix the .drop(strict=False) bug
+    # We wrap the original drop to intercept and discard the 'strict' argument
+    _original_drop = pd.DataFrame.drop
+    def _patched_drop(self, *args, **kwargs):
+        kwargs.pop('strict', None) # Remove 'strict' if Pymer4 tries to pass it
+        # Force errors='ignore' so it doesn't crash on missing 'effect' or 'conf_level'
+        kwargs['errors'] = 'ignore'
+        return _original_drop(self, *args, **kwargs)
+    pd.DataFrame.drop = _patched_drop
+    # 3. Fix the .rename(strict=False) bug (likely the next error)
+    _original_rename = pd.DataFrame.rename
+    def _patched_rename(self, *args, **kwargs):
+        kwargs.pop('strict', None)
+        return _original_rename(self, *args, **kwargs)
+    pd.DataFrame.rename = _patched_rename
+    # --- MONKEYPATCH END ---
+    import polars as pl # Import polars to assist if needed
+    import rpy2.robjects as robjects
+    from rpy2.robjects import pandas2ri
+    from pymer4.models import lmer
+    # 1. Ensure your Master DF has the necessary categorical columns
+    # We want to predict a metric (e.g., EDA_Tonic_Mean) based on Modality and Stressor
+    # Participant is our Random Effect (to account for individual baselines)
+
+    # Create a clean analysis dataframe
+    df_lmm = master_df.copy()
+    # Filter for only the relaxation segments (where we compare VR vs 2D)
+    df_lmm = df_lmm[df_lmm['Segment'].str.contains('nf')]
+    # Add a Modality column if you haven't yet
+    df_lmm['Modality'] = df_lmm['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
+    import rpy2.robjects as robjects
+    # Ensure Participant and Modality are regular columns, not indices
+    df_lmm = df_lmm.reset_index()
+    # 1. Clean the Data Types before the 'with' block
+    # Ensure categorical columns have NO floats/NaNs
+    categorical_cols = ['Participant', 'Modality', 'Experiment_Group', 'Segment']
+    for col in categorical_cols:
+        if col in df_lmm.columns:
+            df_lmm[col] = df_lmm[col].fillna('Unknown').astype(str)
+    # Force numeric columns to be floats (no objects/lists)
+    numeric_cols = ['EDA_Tonic_Mean', 'SCR_Frequency_PerMin']
+    for col in numeric_cols:
+        df_lmm[col] = pd.to_numeric(df_lmm[col], errors='coerce')
+    # Drop any rows where the dependent variable is NaN (R needs this)
+    df_lmm = df_lmm.dropna(subset=['EDA_Tonic_Mean']).infer_objects()
+    # Convert to Polars
+    df_polars = pl.from_pandas(df_lmm)
+    # Create the converter context
+    with robjects.conversion.localconverter(robjects.default_converter + pandas2ri.converter):
+        # Formula: Dependent_Var ~ Fixed_Effect + (1 | Random_Effect)
+        model = lmer('EDA_Tonic_Mean ~ Modality + (1 | Participant)', data=df_polars)
+        # This is where the magic happens (Python -> R -> Python)
+        results = model.fit()
+    # Outside the block, 'results' is a normal Python object (Pandas DataFrame)
+    print("=== Linear Mixed Model Results ===")
+    print(results)
+    results.to_csv('LMM_Final_Results.csv')
+
     return 0
 
 if __name__ == "__main__":
