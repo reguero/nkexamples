@@ -111,10 +111,10 @@ class Filedata(object):
             current_seg.end_index = self.segments['stress2_MIST'].start_index
             current_seg.make_df(file)
                                                                                            
-def ECG_report(seg, name, fdat, fnam, lastmin):
+def ECG_report(seg, name, fdat, fnam, last5min):
     print('Segment {0}.{1}:'.format(fnam, name))
-    if lastmin:
-        df = seg.df['ECG (.5 - 35 Hz)'][60000:]
+    if last5min:
+        df = seg.df['ECG (.5 - 35 Hz)'][300000:]
     else:
         df = seg.df['ECG (.5 - 35 Hz)']
     # Preprocess ECG signal
@@ -139,10 +139,10 @@ def ECG_report(seg, name, fdat, fnam, lastmin):
     #print(analyze_df['HRV_RMSSD'].apply(lambda x: np.array(x).flatten()[0]))
     ##print(analyze_df.iloc[0]['HRV_RMSSD'][0][0])
 
-def EDA_report(seg, name, fdat, fnam, lastmin):
+def EDA_report(seg, name, fdat, fnam, last5min):
     reportname = 'EDAreport_{0}_{1}.html'.format(fnam, name)
-    if lastmin:
-        df = seg.df['EDA (0 - 35 Hz)'][60000:]
+    if last5min:
+        df = seg.df['EDA (0 - 35 Hz)'][300000:]
     else:
         df = seg.df['EDA (0 - 35 Hz)']
     signals, info = nk.eda_process(df, sampling_rate=1000, report=reportname)
@@ -191,10 +191,10 @@ def main():
     master_data = []
     for fnam, fdat in fdatas.items():
         print('\nFile {0}:'.format(fnam))
-        lastmin = True
+        last5min = True
         for name, seg in fdat.segments.items():
-            ECG_report(seg, name, fdat, fnam, lastmin)
-            EDA_report(seg, name, fdat, fnam, lastmin)
+            ECG_report(seg, name, fdat, fnam, last5min)
+            EDA_report(seg, name, fdat, fnam, last5min)
             # Merge DFs
             fdat.analyze = pd.concat([fdat.analyze_eda, fdat.analyze_ecg], axis=1)
             # Drop duplicated columns
