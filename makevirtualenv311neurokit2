@@ -7,3 +7,4 @@ pip install seaborn
 pip install jupyter
 pip install python-lsp-server
 pip install bioread
+pip install pingouin

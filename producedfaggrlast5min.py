@@ -114,9 +114,10 @@ class Filedata(object):
 def ECG_report(seg, name, fdat, fnam, last5min):
     print('Segment {0}.{1}:'.format(fnam, name))
     if last5min:
-        df = seg.df['ECG (.5 - 35 Hz)'][300000:]
+        df = seg.df['ECG (.5 - 35 Hz)'][-300000:]
     else:
         df = seg.df['ECG (.5 - 35 Hz)']
+    print(df)
     # Preprocess ECG signal
     clean_signals, info = nk.ecg_process(df, sampling_rate=1000)
     # Visualize
@@ -142,9 +143,10 @@ def ECG_report(seg, name, fdat, fnam, last5min):
 def EDA_report(seg, name, fdat, fnam, last5min):
     reportname = 'EDAreport_{0}_{1}.html'.format(fnam, name)
     if last5min:
-        df = seg.df['EDA (0 - 35 Hz)'][300000:]
+        df = seg.df['EDA (0 - 35 Hz)'][-300000:]
     else:
         df = seg.df['EDA (0 - 35 Hz)']
+    print(df)
     signals, info = nk.eda_process(df, sampling_rate=1000, report=reportname)
     #signals, info = nk.eda_process(df, sampling_rate=1000, report="text")
     #signals, info = nk.eda_process(df, sampling_rate=1000)
