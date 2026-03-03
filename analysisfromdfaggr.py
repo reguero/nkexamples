@@ -393,327 +393,14 @@ def main():
         group_data.to_csv(f'Data_{group_name}_5min.csv', index=False)
     print("CSVs exported: Master_Data_5min.csv, Final_Statistical_Results_VR_vs_2D_5min.csv and Data_* for groups")
 
-    import statsmodels.formula.api as smf
-    # Create a clean analysis dataframe
-    df_lmm = master_df.copy()
-    df_lmm = df_lmm[df_lmm['Segment'].str.contains('nf')]
-    df_lmm['Modality'] = df_lmm['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
-    df_lmm = df_lmm.reset_index()
-    # Clean numeric data
-    df_lmm['EDA_Tonic_Mean'] = pd.to_numeric(df_lmm['EDA_Tonic_Mean'], errors='coerce')
-    df_lmm = df_lmm.dropna(subset=['EDA_Tonic_Mean'])
-    # Fit the Linear Mixed Model
-    # Formula: Dependent_Var ~ Fixed_Effect
-    # groups: Your Random Effect (Participant)
-    model = smf.mixedlm("EDA_Tonic_Mean ~ Modality", df_lmm, groups=df_lmm["Participant"])
-    results = model.fit()
-    print("=== Statsmodels Linear Mixed Model Results ===")
-    print(results.summary())
-    # Export coefficients to CSV
-    summary_df = results.summary().tables[1]
-    summary_df.to_csv('LMM_Statsmodels_Results.csv')
-
-    # Ensure the metric is numeric and drop NaNs for this specific test
-    df_scr = df_lmm.dropna(subset=['SCR_Frequency_PerMin']).copy()
-    df_scr['SCR_Frequency_PerMin'] = pd.to_numeric(df_scr['SCR_Frequency_PerMin'])
-    # Fit the Linear Mixed Model
-    # Fixed Effect: Modality (VR vs 2D)
-    # Random Effect: Participant (Intercept)
-    model_scr = smf.mixedlm("SCR_Frequency_PerMin ~ Modality", df_scr, groups=df_scr["Participant"])
-    results_scr = model_scr.fit()
-    print("=== MixedLM Results: SCR Frequency ===")
-    print(results_scr.summary())
-    results_scr.summary().tables[1].to_csv('LMM_SCR_Frequency_Results.csv')
-
-    # Interaction model
-    import statsmodels.api as sm
-    df_lmm = master_df.copy()
-    df_lmm = df_lmm[df_lmm['Segment'].str.contains('nf')]
-    df_lmm['Modality'] = df_lmm['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
-    # Convert numeric and Drop NaNs
-    df_lmm['EDA_Tonic_Mean'] = pd.to_numeric(df_lmm['EDA_Tonic_Mean'], errors='coerce')
-        # --- THE "REBIRTH" FIX START ---
-    # We drop NaNs, then reset the index, then CREATE A NEW DF
-    # to break any hidden links to the original 39-row indices.
-    clean_df = df_lmm.dropna(subset=['EDA_Tonic_Mean']).copy()
-    clean_df = clean_df.reset_index(drop=True)
-    # Re-initialize the Participant column as a clean string list
-    clean_df['Participant'] = clean_df['Participant'].astype(str)
-    # --- THE "REBIRTH" FIX END ---
-    #MANUALLY BUILD THE MATRICES (Bypassing from_formula)
-    # y = Dependent Variable
-    y = clean_df['EDA_Tonic_Mean']
-    # X = Independent Variables (Fixed Effects)
-    # We create dummy variables for Modality and Group, then add an Intercept
-    X = pd.get_dummies(clean_df[['Modality', 'Experiment_Group']], drop_first=True, dtype=float)
-    X = sm.add_constant(X) # This is your Intercept
-    # FIT THE MODEL DIRECTLY
-    # We pass 'y', 'X', and 'groups' as raw arrays to ensure NO index mismatch
-    model_int = sm.MixedLM(y, X, groups=clean_df["Participant"])
-    results_int = model_int.fit()
-    # Display Summary
-    # Note: Column names will be numeric indices (0, 1, 2...) in the summary
-    # You can rename them using the column names from X
-    print("=== Interaction Model Results: EDA Tonic ===")
-    print(results_int.summary())
-    # Export
-    results_int.summary().tables[1].to_csv('LMM_Final_Interaction_Manual.csv')
-
-    #interaction_model_modality_x_Group(master_df)
-    #interaction_model_condition_x_session(master_df)
-    #toto(master_df)
-    #toto2(master_df)
-    #toto3(master_df)
-    toto4(master_df)
-    toto5(master_df)
+    LMM_Condition_vrfirst_abbafirst(master_df)
+    LMM_Statsmodels_Condition_x_vrfirst_abbafirst(master_df)
 
     return 0
 
-def interaction_model_modality_x_Group(master_df):
-    import statsmodels.api as sm
-    # 1. THE "REBIRTH": Reset everything to exactly 0 to 37
-    clean_df = master_df.copy()
-    clean_df = clean_df[clean_df['Segment'].str.contains('nf')]
-    clean_df['Modality'] = clean_df['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
-    clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
-    clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
-    # 2. MANUALLY BUILD X (to include interactions)
-    X = pd.get_dummies(clean_df[['Modality', 'Experiment_Group']], drop_first=True, dtype=float)
-    # Add the manual interaction terms (e.g., VR_x_Group4)
-    for col in [c for c in X.columns if 'Experiment_Group' in c]:
-        group_num = col.split('_')[-1]
-        print(group_num)
-        X[f'VR_x_{group_num}'] = X['Modality_VR'] * X[col]
-    print(X)
-    X = sm.add_constant(X)
-    print(X)
-    # 3. FIT THE MODEL (Passing the DataFrame X keeps the names!)
-    # We use clean_df['Participant'] as the groups
-    model_int = sm.MixedLM(clean_df['EDA_Tonic_Mean'], X, groups=clean_df["Participant"])
-    results_int = model_int.fit()
-    # 4. Print Summary (No arguments needed, it uses X.columns automatically)
-    print("=== FINAL INTERACTION MODEL: EDA TONIC ===")
-    print(results_int.summary())
-    # Export the table
-    results_int.summary().tables[1].to_csv('LMM_Final_Interaction_Report.csv')
-
-    # 1. Extract coefficients from your results_int object
-    coeffs = results_int.params
-    # 2. Calculate the "VR Effect" (Simple Slope) for each group
-    slopes = {
-        "Group 1": coeffs["Modality_VR"],
-        "Group 2": coeffs["Modality_VR"] + coeffs["VR_x_Group2"],
-        "Group 3": coeffs["Modality_VR"] + coeffs["VR_x_Group3"],
-        "Group 4": coeffs["Modality_VR"] + coeffs["VR_x_Group4"]
-    }
-    # 3. Create a clean Summary Table
-    simple_slopes_df = pd.DataFrame.from_dict(slopes, orient='index', columns=['VR_Effect_Size'])
-    print("=== SIMPLE SLOPES: The VR vs 2D Effect per Group ===")
-    print(simple_slopes_df)
-
-    # 1. Set the visual style
-    sns.set_theme(style="whitegrid")
-    plt.figure(figsize=(10, 6))
-    # 2. Create the interaction plot
-    # x = Groups, y = EDA Metric, hue = Modality (VR vs 2D)
-    ax = sns.pointplot(
-        data=clean_df,
-        x='Experiment_Group',
-        y='EDA_Tonic_Mean',
-        hue='Modality',
-        markers=["o", "s"],
-        linestyles=["-", "--"],
-        capsize=.1,
-        palette={"VR": "#e74c3c", "2D": "#3498db"} # Red for VR, Blue for 2D
-    )
-    # 3. Add a horizontal line at 0 if you are plotting Deltas
-    # (Optional: only if y is 'Delta', otherwise skip this)
-    # plt.axhline(0, color='black', linestyle=':', alpha=0.5)
-    # 4. Customise the labels
-    plt.title("The Modality x Group Interaction: Paradoxical VR Effect", fontsize=14, pad=20)
-    plt.ylabel("EDA Tonic Mean (μS)", fontsize=12)
-    plt.xlabel("Experiment Group", fontsize=12)
-    plt.legend(title="Modality", frameon=True)
-    # 5. Annotate Group 4 (PB12)
-    plt.annotate('Highest VR Arousal', xy=(3, 9.5), xytext=(2.2, 11),
-                 arrowprops=dict(facecolor='black', shrink=0.05),
-                 fontsize=10, color='red', weight='bold')
-    # 6. Save the plot for your report
-    plt.tight_layout()
-    plt.savefig("Interaction_Plot_VR_vs_2D.png", dpi=300)
-    #plt.show()
-    return
-
-def interaction_model_condition_x_session(master_df):
-    import statsmodels.api as sm
-    clean_df = master_df.copy()
-    clean_df = clean_df[clean_df['Segment'].str.contains('nf')]
-    clean_df['Condition'] = clean_df['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
-    clean_df['Session'] = clean_df['Segment'].apply(lambda x: 'nf1' if 'nf1' in x else 'nf2')
-    clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
-    clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
-    # 2. MANUALLY BUILD X (to include interactions)
-    X = pd.get_dummies(clean_df[['Condition', 'Session']], drop_first=True, dtype=float)
-    print(X)
-    print(X.columns)
-    # Add the manual interaction terms (e.g., VR_x_Group4)
-    for col in [c for c in X.columns if 'Session' in c]:
-        session_num = col.split('_')[-1]
-        X[f'VR_x_{session_num}'] = X['Condition_VR'] * X[col]
-    X = sm.add_constant(X)
-    print(X)
-    # 3. FIT THE MODEL (Passing the DataFrame X keeps the names!)
-    # We use clean_df['Participant'] as the groups
-    model_int = sm.MixedLM(clean_df['EDA_Tonic_Mean'], X, groups=clean_df["Participant"])
-    results_int = model_int.fit()
-    # 4. Print Summary (No arguments needed, it uses X.columns automatically)
-    print("=== FINAL INTERACTION MODEL: EDA TONIC ===")
-    print(results_int.summary())
-    # Export the table
-    results_int.summary().tables[1].to_csv('LMM_Final_Interaction_Report.csv')
-
-    # 1. Extract coefficients from your results_int object
-    coeffs = results_int.params
-    # 2. Calculate the "VR Effect" (Simple Slope) for each group
-    slopes = {
-        "Session nf1": coeffs["Condition_VR"],
-        "Session nf2": coeffs["Condition_VR"] + coeffs["VR_x_nf2"]
-    }
-    # 3. Create a clean Summary Table
-    simple_slopes_df = pd.DataFrame.from_dict(slopes, orient='index', columns=['VR_Effect_Size'])
-    print("=== SIMPLE SLOPES: The VR vs 2D Effect per Session ===")
-    print(simple_slopes_df)
-
-    # 1. Set the visual style
-    sns.set_theme(style="whitegrid")
-    plt.figure(figsize=(10, 6))
-    # 2. Create the interaction plot
-    # x = Groups, y = EDA Metric, hue = Modality (VR vs 2D)
-    ax = sns.pointplot(
-        data=clean_df,
-        x='Session',
-        y='EDA_Tonic_Mean',
-        hue='Condition',
-        markers=["o", "s"],
-        linestyles=["-", "--"],
-        capsize=.1,
-        palette={"VR": "#e74c3c", "2D": "#3498db"} # Red for VR, Blue for 2D
-    )
-    # 3. Add a horizontal line at 0 if you are plotting Deltas
-    # (Optional: only if y is 'Delta', otherwise skip this)
-    # plt.axhline(0, color='black', linestyle=':', alpha=0.5)
-    # 4. Customise the labels
-    plt.title("The Condition x Session Interaction: VR Effect", fontsize=14, pad=20)
-    plt.ylabel("EDA Tonic Mean (μS)", fontsize=12)
-    plt.xlabel("Session", fontsize=12)
-    plt.legend(title="Condition", frameon=True)
-    # 5. Annotate Group 4 (PB12)
-    plt.annotate('Highest VR Arousal', xy=(3, 9.5), xytext=(2.2, 11),
-                 arrowprops=dict(facecolor='black', shrink=0.05),
-                 fontsize=10, color='red', weight='bold')
-    # 6. Save the plot for your report
-    plt.tight_layout()
-    plt.savefig("Interaction_Plot_Condition_VR_vs_2D.png", dpi=300)
-    #plt.show()
-    return
-
-def toto(master_df):
+def LMM_Condition_vrfirst_abbafirst(master_df):
     import statsmodels.formula.api as smf
-
     clean_df = master_df.copy()
-    #clean_df = clean_df[clean_df['Segment'].str.contains('nf')]
-    clean_df['Condition'] = clean_df['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
-    clean_df['Session'] = clean_df['Segment'].apply(lambda x: 'nf1' if 'nf1' in x else 'nf2')
-    clean_df['Stress'] = clean_df['Segment'].apply(lambda x: 'ABBA' if 'ABBA' in x else 'MIST')
-    clean_df['Order'] = clean_df['Segment'].apply(lambda x: 'stress1' if 'stress1' in x else 'stress2')
-    print(clean_df['EDA_Tonic_Mean'])
-    #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
-    clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
-    print(clean_df['EDA_Tonic_Mean'])
-
-    # 'Condition' is your categorical variable
-    #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors", 
-    model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Session + Stress + Order", 
-                        data=clean_df, 
-                        groups=clean_df["Participant"])
-    result = model.fit()
-    print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition + Session + Stress + Order ===")
-    print(result.summary())
-    # Export coefficients to CSV
-    summary_df = result.summary().tables[1]
-    summary_df.to_csv('LMM_Statsmodels_Condition_Session_Stress_Order.csv')
-
-def toto2(master_df):
-    import statsmodels.formula.api as smf
-
-    clean_df = master_df.copy()
-    #clean_df = clean_df[clean_df['Segment'].str.contains('nf')]
-    # Select rows where 'baseline' is NOT in the Segment string
-    clean_df = clean_df[~clean_df['Segment'].str.contains('baseline', case=False, na=False)]
-    clean_df['Condition'] = clean_df['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
-    clean_df['Session'] = clean_df['Segment'].apply(lambda x: 'nf1' if 'nf1' in x else 'nf2')
-    clean_df['Stress'] = clean_df['Segment'].apply(lambda x: 'ABBA' if 'ABBA' in x else 'MIST')
-    clean_df['Order'] = clean_df['Segment'].apply(lambda x: 'stress1' if 'stress1' in x else 'stress2')
-    print(clean_df['EDA_Tonic_Mean'])
-    #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
-    clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
-    print(clean_df['EDA_Tonic_Mean'])
-    print(pd.crosstab(clean_df['Session'], clean_df['Order']))
-    print(pd.crosstab(clean_df['Stress'], clean_df['Order']))
-    print(pd.crosstab(clean_df['Stress'], clean_df['Session']))
-    print(pd.crosstab(clean_df['Condition'], clean_df['Session']))
-    print(pd.crosstab(clean_df['Condition'], clean_df['Order']))
-    print(pd.crosstab(clean_df['Condition'], clean_df['Stress']))
-    return
-    # 'Condition' is your categorical variable
-    #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors", 
-    # Try removing Session since Order is a better predictor anyway
-    model = smf.mixedlm("EDA_Tonic_Mean ~ Condition * Order",
-                        data=clean_df,
-                        groups=clean_df["Participant"])
-    result = model.fit()
-    print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition * Order + Session + Stress ===")
-    print(result.summary())
-    # Export coefficients to CSV
-    summary_df = result.summary().tables[1]
-    summary_df.to_csv('LMM_Statsmodels_Condition_x_Order_Session_Stress.csv')
-
-def toto3(master_df):
-    import statsmodels.formula.api as smf
-
-    clean_df = master_df.copy()
-    #clean_df = clean_df[clean_df['Segment'].str.contains('nf')]
-    # Select rows where 'baseline' is NOT in the Segment string
-    clean_df = clean_df[~clean_df['Segment'].str.contains('baseline', case=False, na=False)]
-    clean_df['Condition'] = clean_df['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
-    # Try to use linearly independent conditions
-    clean_df['vrfirst'] = clean_df['Segment'].apply(lambda x: 'VRfirst' if ('nf1' in x and 'VR' in x) else '2Dfirst')
-    clean_df['abbafirst'] = clean_df['Segment'].apply(lambda x: 'ABBAfirst' if ('stress1' in x and 'ABBA' in x) else 'MISTfirst')
-    print(clean_df['EDA_Tonic_Mean'])
-    #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
-    clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
-    #print(clean_df['EDA_Tonic_Mean'])
-    print(pd.crosstab(clean_df['vrfirst'], clean_df['abbafirst']))
-    print(pd.crosstab(clean_df['Condition'], clean_df['vrfirst']))
-    print(pd.crosstab(clean_df['Condition'], clean_df['abbafirst']))
-    # 'Condition' is your categorical variable
-    #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors",
-    # Try removing Session since Order is a better predictor anyway
-    model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst",
-                        data=clean_df,
-                        groups=clean_df["Participant"])
-    result = model.fit()
-    print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst  ===")
-    print(result.summary())
-    # Export coefficients to CSV
-    summary_df = result.summary().tables[1]
-    summary_df.to_csv('LMM_Statsmodels_Condition_vrfirst_abbafirst.csv')
-
-def toto4(master_df):
-    import statsmodels.formula.api as smf
-
-    clean_df = master_df.copy()
-    #clean_df = clean_df[clean_df['Segment'].str.contains('nf')]
     # Select rows where 'baseline' is NOT in the Segment string
     clean_df = clean_df[~clean_df['Segment'].str.contains('baseline', case=False, na=False)]
     clean_df['Condition'] = clean_df['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
@@ -730,16 +417,13 @@ def toto4(master_df):
     clean_df['abbafirst'] = clean_df['Participant'].apply(
         lambda x: 'ABBAfirst' if x in abba_first_participants else 'ABBAlast'
     )
-    #print(clean_df['EDA_Tonic_Mean'])
     #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
     clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
-    #print(clean_df['EDA_Tonic_Mean'])
     #print(pd.crosstab(clean_df['vrfirst'], clean_df['abbafirst']))
     #print(pd.crosstab(clean_df['Condition'], clean_df['vrfirst']))
     #print(pd.crosstab(clean_df['Condition'], clean_df['abbafirst']))
     # 'Condition' is your categorical variable
     #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors",
-    # Try removing Session since Order is a better predictor anyway
     model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst",
                         data=clean_df,
                         groups=clean_df["Participant"])
@@ -750,11 +434,9 @@ def toto4(master_df):
     summary_df = result.summary().tables[1]
     summary_df.to_csv('LMM_Statsmodels_Condition_vrfirst_abbafirst.csv')
 
-def toto5(master_df):
+def LMM_Statsmodels_Condition_x_vrfirst_abbafirst(master_df):
     import statsmodels.formula.api as smf
-
     clean_df = master_df.copy()
-    #clean_df = clean_df[clean_df['Segment'].str.contains('nf')]
     # Select rows where 'baseline' is NOT in the Segment string
     clean_df = clean_df[~clean_df['Segment'].str.contains('baseline', case=False, na=False)]
     clean_df['Condition'] = clean_df['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
@@ -771,16 +453,13 @@ def toto5(master_df):
     clean_df['abbafirst'] = clean_df['Participant'].apply(
         lambda x: 'ABBAfirst' if x in abba_first_participants else 'ABBAlast'
     )
-    #print(clean_df['EDA_Tonic_Mean'])
     #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
     clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
-    #print(clean_df['EDA_Tonic_Mean'])
     #print(pd.crosstab(clean_df['vrfirst'], clean_df['abbafirst']))
     #print(pd.crosstab(clean_df['Condition'], clean_df['vrfirst']))
     #print(pd.crosstab(clean_df['Condition'], clean_df['abbafirst']))
     # 'Condition' is your categorical variable
     #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors",
-    # Try removing Session since Order is a better predictor anyway
     model = smf.mixedlm("EDA_Tonic_Mean ~ Condition * vrfirst + abbafirst",
                         data=clean_df,
                         groups=clean_df["Participant"])
