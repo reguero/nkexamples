@@ -201,27 +201,33 @@ def main():
     )
     # Append the "New" data from PB12-partie_2 into the master dataframe
     master_df = pd.concat([master_df, source_data], ignore_index=True)
-    ## 6. Optional: Remove the temporary 'PB12-partie_2' rows if you no longer need them
+    ## Optional: Remove the temporary 'PB12-partie_2' rows if you no longer need them
     master_df = master_df[master_df['Participant'] != 'PB12-partie_2']
     print("Final segments for PB12:")
     print(master_df.query("Participant == 'PB12'")['Segment'].unique())
 
-    # Unpickling (deserializing) from a file
-    #with open('dfmasterV0.pkl', 'rb') as f:
-    with open('results.pkl', 'rb') as f:
-        fdatas = pickle.load(f)
+    log_metrics = ['EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']
+    for metric in log_metrics:
+        if metric in master_df.columns:
+            # Create a dataframe of just baselines
+            baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')[metric].mean()
+            print(baselines)
+            # Map those baselines back to the main dataframe
+            master_df['Participant_Baseline_' + metric] = master_df['Participant'].map(baselines)
+            # Apply ln(1+x) to normalize the distribution of EDA/SCR
+            master_df[metric] = np.log1p(master_df[metric]) - np.log1p(master_df['Participant_Baseline_' + metric])
 
     Group1 = ['PB2', 'PB19', 'PB23', 'PB24']
     Group4 = ['PB4', 'PB13', 'PB15', 'PB17', 'PB21']
     Group2 = ['PB3', 'PB5', 'PB22', 'PB26', 'PB27']
     Group3 = ['PB7', 'PB14', 'PB16', 'PB25', 'PB12']
-    # 1. Create a mapping dictionary
+    # Create a mapping dictionary
     group_map = {}
     for pb in Group1: group_map[pb] = 'Group1'
     for pb in Group2: group_map[pb] = 'Group2'
     for pb in Group3: group_map[pb] = 'Group3'
     for pb in Group4: group_map[pb] = 'Group4'
-    # 2. Add the column to your master_df
+    # Add the column to your master_df
     master_df['Experiment_Group'] = master_df['Participant'].map(group_map)
 
     group_configs = {
@@ -235,17 +241,17 @@ def main():
     for group, transitions in group_configs.items():
         print(f"\n--- Analyzing {group} ---")
         for (orig, dest) in transitions:
-            # 1. Get deltas for the whole df
+            # Get deltas for the whole df
             all_deltas = delta(orig, dest, master_df)
-            # 2. Filter for only the members of THIS specific group
+            # Filter for only the members of THIS specific group
             # This prevents NaNs from other participants from appearing
             group_members = [pb for pb, g in group_map.items() if g == group]
             group_deltas = all_deltas.loc[all_deltas.index.isin(group_members)]
-            # 3. Store and Print
+            # Store and Print
             label = f"{group}_{orig}_to_{dest}"
             results_storage[label] = group_deltas
             print(f"Transition: {orig} -> {dest}")
-            print(group_deltas[['SCR_Frequency_PerMin', 'HRV_RMSSD']].mean())
+            print(group_deltas[['EDA_Tonic_Mean', 'SCR_Frequency_PerMin', 'HRV_RMSSD']].mean())
 
     metrics = ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_SDNN', 'HRV_MeanNN', 'EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'Unlim_Duration_Blk']
     for group_name, configs in group_configs.items():
@@ -469,7 +475,8 @@ def LMM_Statsmodels_Condition_x_vrfirst_abbafirst(master_df):
     # Export coefficients to CSV
     summary_df = result.summary().tables[1]
     summary_df.to_csv('LMM_Statsmodels_Condition_x_vrfirst_abbafirst.csv')
-    plot_interaction(clean_df)
+    #plot_interaction(clean_df)
+    plot_normalized_interaction(clean_df)
 
 def plot_interaction(df):
     # Set the visual style
@@ -493,6 +500,73 @@ def plot_interaction(df):
     # Save the figure
     plt.savefig('EDA_Interaction_Plot.png', dpi=300)
     print("Plot saved as 'EDA_Interaction_Plot.png'")
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+def plot_normalized_interaction(df):
+    sns.set_theme(style="whitegrid")
+    plt.figure(figsize=(10, 7))
+
+    # 1. Create the pointplot
+    ax = sns.pointplot(
+        data=df,
+        x='Condition',
+        y='EDA_Tonic_Mean',
+        hue='vrfirst',
+        dodge=0.1,
+        markers=["o", "s"],
+        linestyles=["-", "--"],
+        capsize=.1,
+        errorbar=('ci', 95)
+    )
+
+    # 2. Add baseline indicator
+    plt.axhline(0, color='black', linestyle=':', alpha=0.5, label='Baseline')
+
+    # 3. DYNAMIC COLOR MATCHING
+    # Get the colors Seaborn used for the lines
+    # ax.get_lines() contains the error bars and the main lines
+    # Usually, the first two 'collections' or lines represent our groups
+    colors = [line.get_color() for line in ax.lines[::len(ax.lines)//2]]
+    # Or more reliably from the legend handles:
+    legend_labels = [t.get_text() for t in ax.get_legend().get_texts()]
+    palette_colors = sns.color_palette("muted", len(legend_labels))
+
+    # 4. Add labels with matching colors
+    # Finding the Y-positions for the labels based on the data means
+    # vrfirst group (usually first) and vrlast group (usually second)
+    # Extract the mean values to find the perfect 'anchor' for our text
+    means = df.groupby(['Condition', 'vrfirst'])['EDA_Tonic_Mean'].mean()
+
+    # Calculate Y-positions (adding a small 'buffer' of 0.05 to lift the text)
+    # VR is at X-index 1
+    y_pos_vrlast = means.loc[('VR', 'VRlast')] + 0.05
+    y_pos_vrfirst = means.loc[('VR', 'VRfirst')] + 0.05
+
+    # Updated Text calls
+    plt.text(1.1, y_pos_vrlast, "≈ +52% jump",
+         color=palette_colors[1], fontweight='bold', va='bottom', ha='left')
+
+    plt.text(1.1, y_pos_vrfirst, "≈ -10% dip",
+         color=palette_colors[0], fontweight='bold', va='bottom', ha='left')
+
+    #plt.text(1.1, 0.45, "≈ +52% jump", color=palette_colors[1], fontweight='bold', va='center')
+    #plt.text(1.1, -0.15, "≈ -10% dip", color=palette_colors[0], fontweight='bold', va='center')
+
+    # Increase the top margin of the plot so labels don't hit the ceiling
+    plt.ylim(top=plt.ylim()[1] + 0.2)
+
+    # 5. Final touches
+    plt.title('Normalized Physiological Response (Log-Ratio from Baseline)', fontsize=14, pad=20)
+    plt.xlabel('Environment Condition', fontsize=12)
+    plt.ylabel('Δ ln(EDA + 1) vs Baseline', fontsize=12)
+    plt.legend(title='Order Group', frameon=True, loc='upper left')
+
+    plt.tight_layout()
+    plt.savefig('Normalized_EDA_Interaction_Corrected.png', dpi=300)
+    plt.show()
 
 if __name__ == "__main__":
     main()
