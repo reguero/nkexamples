@@ -621,8 +621,6 @@ def plot_normalized_interaction(df):
     plt.savefig('Normalized_EDA_Interaction_Corrected.png', dpi=300)
     #plt.show()
 
-import numpy as np
-
 def calculate_r2_mixed(result):
     # 1. Fixed Effects Variance: X * beta
     fixed_fitted = np.dot(result.model.exog, result.fe_params)
