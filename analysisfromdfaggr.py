@@ -217,6 +217,17 @@ def main():
             # Apply ln(1+x) to normalize the distribution of EDA/SCR
             master_df[metric] = np.log1p(master_df[metric]) - np.log1p(master_df['Participant_Baseline_' + metric])
 
+    # Get average baseline per participant for ECG
+    ecg_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['ECG_Rate_Mean'].mean()
+    # Map and subtract to get the "BPM Change"
+    master_df['ECG_Delta_over_baseline'] = master_df['ECG_Rate_Mean'] - master_df['Participant'].map(ecg_baselines)
+
+    # Get average baseline per participant for HRV (RMSSD)
+    hrv_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['HRV_RMSSD'].mean()
+    # Map and subtract to get the "ms Change"
+    # Negative values = Reduced regulation (higher stress) | Positive values = Increased relaxation
+    master_df['HRV_Delta_over_baseline'] = master_df['HRV_RMSSD'] - master_df['Participant'].map(hrv_baselines)
+
     Group1 = ['PB2', 'PB19', 'PB23', 'PB24']
     Group4 = ['PB4', 'PB13', 'PB15', 'PB17', 'PB21']
     Group2 = ['PB3', 'PB5', 'PB22', 'PB26', 'PB27']
@@ -319,6 +330,7 @@ def main():
         values='Mean_Delta',
         aggfunc='mean'
     )
+    print("\n")
     print("=== FINAL COMPARISON: VR vs 2D RELAXATION (Across All Groups) ===")
     print(final_report)
 
@@ -365,6 +377,7 @@ def main():
         })
     # Display the Final Summary
     final_summary_df = pd.DataFrame(final_results).sort_values('p_val')
+    print("\n")
     print("=== FINAL POOLED COMPARISON: VR vs 2D MODALITY ===")
     print(final_summary_df)
 
@@ -398,7 +411,7 @@ def main():
         group_data = master_df[master_df['Experiment_Group'] == group_name]
         group_data.to_csv(f'Data_{group_name}_5min.csv', index=False)
     print("CSVs exported: Master_Data_5min.csv, Final_Statistical_Results_VR_vs_2D_5min.csv and Data_* for groups")
-
+    print("\n")
     LMM_Condition_vrfirst_abbafirst(master_df)
     LMM_Statsmodels_Condition_x_vrfirst_abbafirst(master_df)
 
@@ -470,40 +483,80 @@ def LMM_Statsmodels_Condition_x_vrfirst_abbafirst(master_df):
                         data=clean_df,
                         groups=clean_df["Participant"])
     result = model.fit()
+    m_r2, c_r2 = calculate_r2_mixed(result)
+    print("--- R2 Report ---")
+    print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
+    print(f"Conditional R2 (Total model): {c_r2:.3f}")
+    print("\n")
+
     print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition * vrfirst + abbafirst  ===")
     print(result.summary())
+
+    eda_emms = calculate_emmeans(result) # Use your EDA result object
+    print("--- Estimated Marginal Means (EDA) ---")
+    for key, value in eda_emms.items():
+        print(f"{key}: {value:.4f}")
+    print("\n")
+
+    from statsmodels.stats.outliers_influence import variance_inflation_factor
+    from statsmodels.tools.tools import add_constant
+    # Select your fixed effects
+    features = clean_df[['Condition', 'vrfirst', 'abbafirst']]
+    # Convert to dummies (0 and 1)
+    X = pd.get_dummies(features, drop_first=True).astype(float)
+    X = add_constant(X)
+    # Calculate VIF for each variable
+    vif_data = pd.DataFrame()
+    vif_data["feature"] = X.columns
+    vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(len(X.columns))]
+    print("--- VIF Report ---")
+    print(vif_data)
+    print("\n")
+
     # Export coefficients to CSV
     summary_df = result.summary().tables[1]
     summary_df.to_csv('LMM_Statsmodels_Condition_x_vrfirst_abbafirst.csv')
-    #plot_interaction(clean_df)
     plot_normalized_interaction(clean_df)
 
-def plot_interaction(df):
-    # Set the visual style
-    sns.set_theme(style="whitegrid")
-    plt.figure(figsize=(10, 6))
 
-    # Create the pointplot
-    # x: The experimental condition
-    # hue: The group assignment (order)
-    # dodge=True: separates the points slightly so they don't overlap
-    ax = sns.pointplot(data=df, x='Condition', y='EDA_Tonic_Mean', hue='vrfirst',
-                       markers=["o", "s"], linestyles=["-", "--"],
-                       capsize=.1, dodge=True, palette="viridis")
+    model_ecg = smf.mixedlm("ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst",
+                        data=clean_df[clean_df['Segment'].str.contains('baseline') == False],
+                        groups=clean_df[clean_df['Segment'].str.contains('baseline') == False]["Participant"])
+    result_ecg = model_ecg.fit()
+    print("=== Statsmodels Linear Mixed Model ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst  ===")
+    print(result_ecg.summary())
+    plot_dual_interaction(clean_df[clean_df['Segment'].str.contains('baseline') == False])
 
-    # Add titles and labels
-    plt.title('Interaction Effect: Condition vs. Presentation Order', fontsize=15)
-    plt.xlabel('Environment Condition', fontsize=12)
-    plt.ylabel('Mean Tonic EDA (μS)', fontsize=12)
-    plt.legend(title='Order Group')
+    model_hrv = smf.mixedlm("HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst", 
+                        data=clean_df[~clean_df['Segment'].str.contains('baseline')], 
+                        groups=clean_df[~clean_df['Segment'].str.contains('baseline')]["Participant"])
+    result_hrv = model_hrv.fit()
+    print("=== Statsmodels Linear Mixed Model HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst  ===")
+    print(result_hrv.summary())
+    plot_triple_signature(clean_df[~clean_df['Segment'].str.contains('baseline')])
 
-    # Save the figure
-    plt.savefig('EDA_Interaction_Plot.png', dpi=300)
-    print("Plot saved as 'EDA_Interaction_Plot.png'")
+    # Calculate descriptive statistics for the three key metrics
+    metrics = ['EDA_Tonic_Mean', 'ECG_Rate_Mean', 'HRV_RMSSD']
+    # Create the summary table
+    desc_table = clean_df.groupby(['vrfirst', 'Condition'])[metrics].agg(['mean', 'std']).round(3)
+    # Reset index for a cleaner look if exporting to CSV
+    # desc_table.to_csv("Appendix_Descriptives.csv")
+    print("--- Descriptive statistics report for the three key metrics ---")
+    print(desc_table)
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
+# Calculate EMMs manually from the fixed effects
+def calculate_emmeans(result):
+    params = result.fe_params
+    # Logic: Intercept + Coef_Cond * X + Coef_Order * Y + Coef_Int * (X*Y)
+    # Mapping: VR=1, 2D=0; VRlast=1, VRfirst=0
+    emm = {
+        "VRfirst_2D": params['Intercept'],
+        "VRfirst_VR": params['Intercept'] + params['Condition[T.VR]'],
+        "VRlast_2D":  params['Intercept'] + params['vrfirst[T.VRlast]'],
+        "VRlast_VR":  params['Intercept'] + params['Condition[T.VR]'] + 
+                      params['vrfirst[T.VRlast]'] + params['Condition[T.VR]:vrfirst[T.VRlast]']
+    }
+    return emm
 
 def plot_normalized_interaction(df):
     sns.set_theme(style="whitegrid")
@@ -566,7 +619,122 @@ def plot_normalized_interaction(df):
 
     plt.tight_layout()
     plt.savefig('Normalized_EDA_Interaction_Corrected.png', dpi=300)
-    plt.show()
+    #plt.show()
+
+import numpy as np
+
+def calculate_r2_mixed(result):
+    # 1. Fixed Effects Variance: X * beta
+    fixed_fitted = np.dot(result.model.exog, result.fe_params)
+    var_fixed = np.var(fixed_fitted)
+
+    # 2. Random Effects Variance
+    # result.cov_re is the covariance matrix for random effects.
+    # For a random intercept model, it's a 1x1 matrix.
+    # We use .iloc[0,0] if it's a DataFrame or just index it if it's an array.
+    try:
+        # Try to get the variance from the diagonal of the RE covariance matrix
+        var_random = np.diag(result.cov_re).sum()
+    except:
+        # Fallback to vcomp if available
+        var_random = result.vcomp[0] if len(result.vcomp) > 0 else 0
+
+    # 3. Residual Variance (Scale)
+    var_resid = result.scale
+
+    # 4. Total Variance
+    var_total = var_fixed + var_random + var_resid
+
+    # 5. R-Squared Calculations
+    marginal_r2 = var_fixed / var_total
+    conditional_r2 = (var_fixed + var_random) / var_total
+
+    return marginal_r2, conditional_r2
+
+def plot_dual_interaction(df):
+    # 1. Setup figure with two subplots
+    sns.set_theme(style="whitegrid")
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+    palette = sns.color_palette("muted", n_colors=2)
+
+    # --- LEFT PLOT: EDA (The Significant Spike) ---
+    sns.pointplot(
+        data=df, x='Condition', y='EDA_Tonic_Mean', hue='vrfirst',
+        ax=ax1, dodge=0.1, markers=["o", "s"], linestyles=["-", "--"],
+        capsize=.1, errorbar=('ci', 95), palette=palette
+    )
+    ax1.axhline(0, color='black', linestyle=':', alpha=0.5)
+    ax1.set_title('A: Emotional Arousal (Tonic EDA)\nSignificant Interaction (p = .016)',
+                  fontsize=14, fontweight='bold', pad=15)
+    ax1.set_ylabel('Δ ln(EDA + 1) vs Baseline', fontsize=12)
+    ax1.set_xlabel('Environment', fontsize=12)
+
+    # Calculate positions for annotations (EDA)
+    eda_means = df.groupby(['Condition', 'vrfirst'])['EDA_Tonic_Mean'].mean()
+    ax1.text(1.1, eda_means.loc[('VR', 'VRlast')] + 0.02, "≈ +52% jump",
+             color=palette[1], fontweight='bold', va='bottom')
+    ax1.text(1.1, eda_means.loc[('VR', 'VRfirst')] - 0.05, "≈ -10% dip",
+             color=palette[0], fontweight='bold', va='top')
+
+    # --- RIGHT PLOT: ECG (The Null Result) ---
+    sns.pointplot(
+        data=df, x='Condition', y='ECG_Delta_over_baseline', hue='vrfirst',
+        ax=ax2, dodge=0.1, markers=["o", "s"], linestyles=["-", "--"],
+        capsize=.1, errorbar=('ci', 95), palette=palette
+    )
+    ax2.axhline(0, color='black', linestyle=':', alpha=0.5)
+    ax2.set_title('B: Physical Effort (Heart Rate)\nNon-Significant Interaction (p = .095)',
+                  fontsize=14, fontweight='bold', pad=15)
+    ax2.set_ylabel('Δ Heart Rate (BPM) vs Baseline', fontsize=12)
+    ax2.set_xlabel('Environment', fontsize=12)
+
+    # Clean up legends
+    ax1.legend(title='Order Group', loc='upper left')
+    ax2.get_legend().remove() # Only need one legend for the whole figure
+
+    plt.tight_layout()
+    plt.savefig('Physiological_Fractionation_Plot.png', dpi=300)
+    #plt.show()
+
+def plot_triple_signature(df):
+    sns.set_theme(style="whitegrid")
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(20, 7))
+    palette = sns.color_palette("muted", n_colors=2)
+
+    # Common settings for all plots
+    plot_params = {
+        'x': 'Condition', 'hue': 'vrfirst', 'dodge': 0.1,
+        'markers': ["o", "s"], 'linestyles': ["-", "--"],
+        'capsize': .1, 'errorbar': ('ci', 95), 'palette': palette
+    }
+
+    # Plot 1: EDA (Sympathetic)
+    sns.pointplot(data=df, y='EDA_Tonic_Mean', ax=ax1, **plot_params)
+    ax1.set_title('A: Sympathetic Arousal\n(Tonic EDA)', fontweight='bold')
+    ax1.set_ylabel('Δ ln(EDA + 1) vs Baseline')
+
+    # Plot 2: Heart Rate (Demand)
+    sns.pointplot(data=df, y='ECG_Delta_over_baseline', ax=ax2, **plot_params)
+    ax2.set_title('B: Overall Heart Rate\n(BPM Change)', fontweight='bold')
+    ax2.set_ylabel('Δ BPM vs Baseline')
+
+    # Plot 3: HRV (Parasympathetic/Stress)
+    sns.pointplot(data=df, y='HRV_Delta_over_baseline', ax=ax3, **plot_params)
+    ax3.set_title('C: Vagal Tone / Regulation\n(RMSSD Change)', fontweight='bold')
+    ax3.set_ylabel('Δ RMSSD (ms) vs Baseline')
+
+    # Clean up
+    for ax in [ax1, ax2, ax3]:
+        ax.axhline(0, color='black', linestyle=':', alpha=0.5)
+        ax.set_xlabel('Environment')
+
+    ax1.legend(title='Order Group', loc='upper left')
+    ax2.get_legend().remove()
+    ax3.get_legend().remove()
+
+    plt.tight_layout()
+    plt.savefig('Physiological_Signature_Triple.png', dpi=300)
+    #plt.show()
 
 if __name__ == "__main__":
     main()
