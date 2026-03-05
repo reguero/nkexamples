@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import os
 import pickle
 import pingouin as pg
+from scipy.special import logit
 
 class Segment(object):
     def __init__(self, name, start_index_text, start_index, seg_before):
@@ -217,6 +218,15 @@ def main():
             # Apply ln(1+x) to normalize the distribution of EDA/SCR
             master_df[metric] = np.log1p(master_df[metric]) - np.log1p(master_df['Participant_Baseline_' + metric])
 
+    # Get average baseline per participant for SCR_Frequency_PerMin
+    scr_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['SCR_Frequency_PerMin'].mean()
+    # Map those baselines back to the main dataframe
+    master_df['SCR_Freq_Delta'] = np.sqrt(master_df['SCR_Frequency_PerMin']) - np.sqrt(master_df['Participant'].map(scr_baselines))
+
+    sym_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['EDA_SympatheticN'].mean()
+    # Map those baselines back to the main dataframe
+    master_df['Sympathetic_Delta'] = logit(master_df['EDA_SympatheticN'].clip(0.001, 0.999)) - logit(master_df['Participant'].map(sym_baselines).clip(0.001, 0.999))
+
     # Get average baseline per participant for ECG
     ecg_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['ECG_Rate_Mean'].mean()
     # Map and subtract to get the "BPM Change"
@@ -412,12 +422,12 @@ def main():
         group_data.to_csv(f'Data_{group_name}_5min.csv', index=False)
     print("CSVs exported: Master_Data_5min.csv, Final_Statistical_Results_VR_vs_2D_5min.csv and Data_* for groups")
     print("\n")
-    LMM_Condition_vrfirst_abbafirst(master_df)
-    LMM_Statsmodels_Condition_x_vrfirst_abbafirst(master_df)
+    LMM_Condition_vrfirst_abbafirst_phase(master_df)
+    LMM_Statsmodels_Condition_x_vrfirst_abbafirst_phase(master_df)
 
     return 0
 
-def LMM_Condition_vrfirst_abbafirst(master_df):
+def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     import statsmodels.formula.api as smf
     clean_df = master_df.copy()
     # Select rows where 'baseline' is NOT in the Segment string
@@ -436,6 +446,16 @@ def LMM_Condition_vrfirst_abbafirst(master_df):
     clean_df['abbafirst'] = clean_df['Participant'].apply(
         lambda x: 'ABBAfirst' if x in abba_first_participants else 'ABBAlast'
     )
+    # Define the conditions
+    conditions = [
+        clean_df['Segment'].str.contains('nf1', case=False, na=False),
+        clean_df['Segment'].str.contains('nf2', case=False, na=False)
+    ]
+    # Define the corresponding values
+    choices = ['phase1', 'phase2']
+    # Create the column (default to 'other' if neither nf1 nor nf2 is found)
+    clean_df['Phase'] = np.select(conditions, choices, default='other')
+
     #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
     clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
     #print(pd.crosstab(clean_df['vrfirst'], clean_df['abbafirst']))
@@ -443,17 +463,17 @@ def LMM_Condition_vrfirst_abbafirst(master_df):
     #print(pd.crosstab(clean_df['Condition'], clean_df['abbafirst']))
     # 'Condition' is your categorical variable
     #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors",
-    model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst",
+    model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst + Phase",
                         data=clean_df,
                         groups=clean_df["Participant"])
     result = model.fit()
-    print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst  ===")
+    print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst + Phase ===")
     print(result.summary())
     # Export coefficients to CSV
     summary_df = result.summary().tables[1]
     summary_df.to_csv('LMM_Statsmodels_Condition_vrfirst_abbafirst.csv')
 
-def LMM_Statsmodels_Condition_x_vrfirst_abbafirst(master_df):
+def LMM_Statsmodels_Condition_x_vrfirst_abbafirst_phase(master_df):
     import statsmodels.formula.api as smf
     clean_df = master_df.copy()
     # Select rows where 'baseline' is NOT in the Segment string
@@ -472,6 +492,16 @@ def LMM_Statsmodels_Condition_x_vrfirst_abbafirst(master_df):
     clean_df['abbafirst'] = clean_df['Participant'].apply(
         lambda x: 'ABBAfirst' if x in abba_first_participants else 'ABBAlast'
     )
+    # Define the conditions
+    conditions = [
+        clean_df['Segment'].str.contains('nf1', case=False, na=False),
+        clean_df['Segment'].str.contains('nf2', case=False, na=False)
+    ]
+    # Define the corresponding values
+    choices = ['phase1', 'phase2']
+    # Create the column (default to 'other' if neither nf1 nor nf2 is found)
+    clean_df['Phase'] = np.select(conditions, choices, default='other')
+
     #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
     clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
     #print(pd.crosstab(clean_df['vrfirst'], clean_df['abbafirst']))
@@ -479,29 +509,65 @@ def LMM_Statsmodels_Condition_x_vrfirst_abbafirst(master_df):
     #print(pd.crosstab(clean_df['Condition'], clean_df['abbafirst']))
     # 'Condition' is your categorical variable
     #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors",
-    model = smf.mixedlm("EDA_Tonic_Mean ~ Condition * vrfirst + abbafirst",
+    model = smf.mixedlm("EDA_Tonic_Mean ~ Condition * vrfirst + abbafirst + Phase",
                         data=clean_df,
                         groups=clean_df["Participant"])
     result = model.fit()
     m_r2, c_r2 = calculate_r2_mixed(result)
-    print("--- R2 Report ---")
+    print("--- R2 Report EDA Tonic Mean ---")
     print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
     print(f"Conditional R2 (Total model): {c_r2:.3f}")
     print("\n")
-
-    print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition * vrfirst + abbafirst  ===")
+    print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition * vrfirst + abbafirst + Phase ===")
     print(result.summary())
-
     eda_emms = calculate_emmeans(result) # Use your EDA result object
-    print("--- Estimated Marginal Means (EDA) ---")
+    print("--- Estimated Marginal Means (EDA Tonic Mean) ---")
     for key, value in eda_emms.items():
         print(f"{key}: {value:.4f}")
     print("\n")
+    check_model_health(result, 'EDA Tonic Mean')
+
+    model = smf.mixedlm("SCR_Freq_Delta ~ Condition * vrfirst + abbafirst + Phase",
+                        data=clean_df,
+                        groups=clean_df["Participant"])
+    result_scr = model.fit()
+    m_r2, c_r2 = calculate_r2_mixed(result_scr)
+    print("--- R2 Report SCR_Freq_Delta ---")
+    print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
+    print(f"Conditional R2 (Total model): {c_r2:.3f}")
+    print("\n")
+    print("=== Statsmodels Linear Mixed Model SCR_Freq_Delta ~ Condition * vrfirst + abbafirst + Phase ===")
+    print(result_scr.summary())
+    scr_emms = calculate_emmeans(result_scr) # Use your SCR result object
+    print("--- Estimated Marginal Means (SCR_Freq_Delta) ---")
+    for key, value in scr_emms.items():
+        print(f"{key}: {value:.4f}")
+    print("\n")
+    check_model_health(result_scr, 'SCR_Freq_Delta')
+
+    model = smf.mixedlm("Sympathetic_Delta ~ Condition * vrfirst + abbafirst + Phase",
+                        data=clean_df,
+                        groups=clean_df["Participant"])
+    result_sym = model.fit()
+    m_r2, c_r2 = calculate_r2_mixed(result_sym)
+    print("--- R2 Report Sympathetic_Delta ---")
+    print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
+    print(f"Conditional R2 (Total model): {c_r2:.3f}")
+    print("\n")
+    print("=== Statsmodels Linear Mixed Model Sympathetic_Delta ~ Condition * vrfirst + abbafirst + Phase ===")
+    print(result_sym.summary())
+    sym_emms = calculate_emmeans(result_sym) # Use your SCR result object
+    print("--- Estimated Marginal Means (Sympathetic_Delta) ---")
+    for key, value in sym_emms.items():
+        print(f"{key}: {value:.4f}")
+    print("\n")
+    check_model_health(result_sym, 'Sympathetic_Delta')
+
 
     from statsmodels.stats.outliers_influence import variance_inflation_factor
     from statsmodels.tools.tools import add_constant
     # Select your fixed effects
-    features = clean_df[['Condition', 'vrfirst', 'abbafirst']]
+    features = clean_df[['Condition', 'vrfirst', 'abbafirst', 'Phase']]
     # Convert to dummies (0 and 1)
     X = pd.get_dummies(features, drop_first=True).astype(float)
     X = add_constant(X)
@@ -515,37 +581,62 @@ def LMM_Statsmodels_Condition_x_vrfirst_abbafirst(master_df):
 
     # Export coefficients to CSV
     summary_df = result.summary().tables[1]
-    summary_df.to_csv('LMM_Statsmodels_Condition_x_vrfirst_abbafirst.csv')
+    summary_df.to_csv('LMM_Statsmodels_Condition_x_vrfirst_abbafirst_phase.csv')
     plot_normalized_interaction(clean_df)
 
 
-    model_ecg = smf.mixedlm("ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst",
+    model_ecg = smf.mixedlm("ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase",
                         data=clean_df[clean_df['Segment'].str.contains('baseline') == False],
                         groups=clean_df[clean_df['Segment'].str.contains('baseline') == False]["Participant"])
     result_ecg = model_ecg.fit()
-    print("=== Statsmodels Linear Mixed Model ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst  ===")
+    m_r2, c_r2 = calculate_r2_mixed(result_ecg)
+    print("--- R2 Report ECG Delta over baseline ---")
+    print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
+    print(f"Conditional R2 (Total model): {c_r2:.3f}")
+    print("\n")
+    print("=== Statsmodels Linear Mixed Model ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase ===")
     print(result_ecg.summary())
+    ecg_emms = calculate_emmeans(result_ecg) # Use your ECG result object
+    print("--- Estimated Marginal Means (ECG Delta over baseline) ---")
+    for key, value in ecg_emms.items():
+        print(f"{key}: {value:.4f}")
+    print("\n")
+    check_model_health(result_ecg, 'ECG Delta over baseline')
+
     plot_dual_interaction(clean_df[clean_df['Segment'].str.contains('baseline') == False])
 
-    model_hrv = smf.mixedlm("HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst", 
+    model_hrv = smf.mixedlm("HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase", 
                         data=clean_df[~clean_df['Segment'].str.contains('baseline')], 
                         groups=clean_df[~clean_df['Segment'].str.contains('baseline')]["Participant"])
     result_hrv = model_hrv.fit()
-    print("=== Statsmodels Linear Mixed Model HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst  ===")
+    m_r2, c_r2 = calculate_r2_mixed(result_hrv)
+    print("--- R2 Report HRV Delta over baseline ---")
+    print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
+    print(f"Conditional R2 (Total model): {c_r2:.3f}")
+    print("\n")
+    print("=== Statsmodels Linear Mixed Model HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase ===")
     print(result_hrv.summary())
+    hrv_emms = calculate_emmeans(result_hrv) # Use your HRV result object
+    print("--- Estimated Marginal Means (HRV Delta over baseline) ---")
+    for key, value in hrv_emms.items():
+        print(f"{key}: {value:.4f}")
+    print("\n")
+    check_model_health(result_hrv, 'HRV Delta over baseline')
+
+
     plot_triple_signature(clean_df[~clean_df['Segment'].str.contains('baseline')])
 
     # Calculate descriptive statistics for the three key metrics
-    metrics = ['EDA_Tonic_Mean', 'ECG_Rate_Mean', 'HRV_RMSSD']
+    metrics = ['EDA_Tonic_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'ECG_Rate_Mean', 'HRV_RMSSD']
     # Create the summary table
     desc_table = clean_df.groupby(['vrfirst', 'Condition'])[metrics].agg(['mean', 'std']).round(3)
     # Reset index for a cleaner look if exporting to CSV
     # desc_table.to_csv("Appendix_Descriptives.csv")
-    print("--- Descriptive statistics report for the three key metrics ---")
+    print("--- Descriptive statistics report for the key metrics ---")
     print(desc_table)
 
 # Calculate EMMs manually from the fixed effects
-def calculate_emmeans(result):
+def calculate_base_emmeans(result):
     params = result.fe_params
     # Logic: Intercept + Coef_Cond * X + Coef_Order * Y + Coef_Int * (X*Y)
     # Mapping: VR=1, 2D=0; VRlast=1, VRfirst=0
@@ -557,6 +648,25 @@ def calculate_emmeans(result):
                       params['vrfirst[T.VRlast]'] + params['Condition[T.VR]:vrfirst[T.VRlast]']
     }
     return emm
+
+def calculate_emmeans(result):
+    p = result.fe_params
+
+    # Calculate the average 'Phase effect'
+    # (Phase1_effect + Phase2_effect) / 2
+    avg_phase_effect = (p['Phase[T.phase1]'] + p['Phase[T.phase2]']) / 2
+
+    # Add this average effect to the Intercept
+    base = p['Intercept'] + avg_phase_effect
+
+    emms = {
+        "VR-First + 2D": base,
+        "VR-First + VR": base + p['Condition[T.VR]'],
+        "VR-Last + 2D":  base + p['vrfirst[T.VRlast]'],
+        "VR-Last + VR":  base + p['Condition[T.VR]'] +
+                         p['vrfirst[T.VRlast]'] + p['Condition[T.VR]:vrfirst[T.VRlast]']
+    }
+    return emms
 
 def plot_normalized_interaction(df):
     sns.set_theme(style="whitegrid")
@@ -733,6 +843,34 @@ def plot_triple_signature(df):
     plt.tight_layout()
     plt.savefig('Physiological_Signature_Triple.png', dpi=300)
     #plt.show()
+
+def check_model_health(result, title):
+    # 'result' must be the object returned by model.fit()
+    import statsmodels.api as sm
+    from scipy import stats
+
+    try:
+        residuals = result.resid  # No parentheses here for statsmodels MixedLM results
+        fitted_values = result.fittedvalues
+    except AttributeError:
+        # Fallback if the object passed was the model instead of the results
+        print("Error: Please pass the FITTED result object (e.g., model.fit())")
+        return
+    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+    # QQ-Plot: The DHARMa equivalent for checking normality
+    sm.qqplot(residuals, dist=stats.norm, line='s', ax=ax[0])
+    ax[0].set_title("QQ-Plot: Residual Normality: "+title)
+    # Residuals vs Fitted: Checking for constant variance (Homoscedasticity)
+    ax[1].scatter(fitted_values, residuals, alpha=0.5, color='teal')
+    ax[1].axhline(y=0, color='red', linestyle='--')
+    ax[1].set_xlabel("Fitted Values")
+    ax[1].set_ylabel("Residuals")
+    ax[1].set_title("Residuals vs Fitted")
+    plt.tight_layout()
+    fig = plt.gcf()
+    fig.savefig("QQ-Plot: Residual Normality: "+title+".png")
+    #plt.show()
+    plt.close()
 
 if __name__ == "__main__":
     main()
