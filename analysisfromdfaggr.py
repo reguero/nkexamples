@@ -1,163 +1,14 @@
 #!/usr/bin/env python
 
-import bioread
 import numpy as np
 import pandas as pd
-import neurokit2 as nk
 import seaborn as sns
 import matplotlib.pyplot as plt
 import os
 import pickle
 import pingouin as pg
 from scipy.special import logit
-
-class Segment(object):
-    def __init__(self, name, start_index_text, start_index, seg_before):
-        self.name = name
-        self.start_index_text = start_index_text
-        self.start_index = start_index
-        self.end_index_text = ""
-        self.end_index = 0
-        self.before = seg_before
-        self.after = None
-        self.marker_inside_text = ""
-        self.marker_inside_index = 0
-
-    def make_df(self, file):
-        data = {}
-        for channel in file.named_channels:
-            signal = np.array(file.named_channels[channel].data[self.start_index:self.end_index])
-            data[channel] = signal
-        self.df = pd.DataFrame(data)
-        print('Dataframe of {0}:'.format(self.name))
-        #print(self.df)
-
-class Filedata(object):
-    def __init__(self, filename):
-        self.filename = filename
-        self.segments = {}
-        #self.analyze_ecg = {}
-        #self.analyze_eda = {}
-
-    def preparedata(self):
-        name_seg_before = None
-        name_seg_after = None
-        file = bioread.read_file('RAW_data/labeled/{0}.acq'.format(self.filename))
-        for m in file.event_markers:
-            if m.text == 'post nf1_VR (crashed)' and self.filename == 'PB1_only_part2':
-                continue
-
-            if m.text == 'recording interrupted' and self.filename == 'PB12':
-                m.text = 'stress2_MIST_end'
-
-            if m.text == 'stress1_ABBA_start' and m.sample_index == 946410 and self.filename == 'PB13':
-                m.text = "stress1_ABBA_end"
-
-            if m.text == 'stress2_MIST_end' and self.filename == 'PB23':
-                m.text = "stress1_MIST_end"
-
-            if m.text == '' and self.filename == 'PB27':
-                m.text = "nf2_VR_start"
-
-            if m.text == '' and self.filename == 'PB15':
-                m.text = "nf2_VR_end"
-
-            if m.text == '' and self.filename in ['PB4', 'PB16', 'PB22', 'PB25', 'PB12-partie_2']:
-                continue
-
-            if m.text == 'baseline':
-                name = m.text
-                current_seg = Segment(name, m.text, m.sample_index, name_seg_before)
-                self.segments[name] = current_seg
-                name_seg_before = name
-            elif m.text.startswith("Segment "):
-                continue
-            elif m.text.endswith("_start"):
-                name = m.text.removesuffix("_start")
-                current_seg = Segment(name, m.text, m.sample_index, name_seg_before)
-                self.segments[name] = current_seg
-                if name_seg_before != None:
-                    self.segments[name_seg_before].after = name
-                name_seg_before = name
-            elif m.text.endswith("_end"):
-                name = m.text.removesuffix("_end")
-                current_seg = self.segments[name]
-                current_seg.end_index_text = m.text
-                current_seg.end_index = m.sample_index
-                current_seg.make_df(file)
-                name_seg_before = name
-            elif m.text.endswith("_unlimited"):
-                if name_seg_before != None:
-                    print("unlimited: " + m.text)
-                    self.segments[name_seg_before].marker_inside_text = m.text
-                    self.segments[name_seg_before].marker_inside_index = m.sample_index
-            else:
-                print("unknown: " + m.text)
-            print(m.text)
-
-        if self.filename in ['PB4', 'PB7', 'PB12', 'PB13', 'PB14', 'PB15', 'PB16', 'PB17', 'PB21', 'PB25']:
-            current_seg = self.segments['baseline']
-            current_seg.end_index_text = self.segments['stress1_ABBA'].start_index_text
-            current_seg.end_index = self.segments['stress1_ABBA'].start_index
-            current_seg.make_df(file)
-
-        if self.filename in ['PB2', 'PB3', 'PB5', 'PB19', 'PB22', 'PB23', 'PB24', 'PB26', 'PB27']:
-            current_seg = self.segments['baseline']
-            current_seg.end_index_text = self.segments['stress1_MIST'].start_index_text
-            current_seg.end_index = self.segments['stress1_MIST'].start_index
-            current_seg.make_df(file)
-
-        if self.filename in ['PB12-partie_2']:
-            current_seg = self.segments['baseline']
-            current_seg.end_index_text = self.segments['stress2_MIST'].start_index_text
-            current_seg.end_index = self.segments['stress2_MIST'].start_index
-            current_seg.make_df(file)
-                                                                                           
-def ECG_report(df, name, fdat, fnam):
-    print('Segment {0}.{1}:'.format(fnam, name))
-    # Preprocess ECG signal
-    clean_signals, info = nk.ecg_process(df['ECG (.5 - 35 Hz)'], sampling_rate=1000)
-    # Visualize
-    nk.ecg_plot(clean_signals, info)
-    fig = plt.gcf()
-    fig.savefig("ecg_proccess_{0}_{1}.png".format(fnam, name))
-    plt.close()
-    # Analyze
-    analyze_df = nk.ecg_analyze(clean_signals, sampling_rate=1000)
-    print('ECG analyze output of segment {0}.{1}:'.format(fnam, name))
-    print(analyze_df)
-    fdat.analyze_ecg = analyze_df
-    #for col in analyze_df:
-    #    print(col)
-    print(analyze_df['HRV_MeanNN'].apply(lambda x: np.array(x).flatten()[0]))
-    #print(analyze_df['HRV_MeanNN'].iloc[0][0][0])
-    print(analyze_df['HRV_SDNN'].apply(lambda x: np.array(x).flatten()[0]))
-    #print(analyze_df.iloc[0]['HRV_SDNN'][0][0])
-    print(analyze_df['HRV_RMSSD'].apply(lambda x: np.array(x).flatten()[0]))
-    #print(analyze_df.iloc[0]['HRV_RMSSD'][0][0])
-
-def EDA_report(df, name, fdat, fnam):
-    reportname = 'EDAreport_{0}_{1}.html'.format(fnam, name)
-    signals, info = nk.eda_process(df['EDA (0 - 35 Hz)'], sampling_rate=1000, report=reportname)
-    #signals, info = nk.eda_process(df['EDA (0 - 35 Hz)'], sampling_rate=1000, report="text")
-    #signals, info = nk.eda_process(df['EDA (0 - 35 Hz)'], sampling_rate=1000)
-    nk.eda_plot(signals, info)
-    fig = plt.gcf()
-    fig.savefig("eda_{0}_{1}.png".format(fnam, name))
-    plt.close(fig)
-    print('EDA of segment {0}.{1}:'.format(fnam, name))
-    #print(signals)
-    #print(info)
-    analyze_df = nk.eda_analyze(signals, sampling_rate=1000)
-    print(analyze_df)
-    fdat.analyze_eda = analyze_df
-
-def sort_filelist(l):
-    import re
-    convert = lambda text: int(text) if text.isdigit() else text
-    alphanum = lambda key: [convert(c) for c in re.split(r'PB(\d+)', key)]
-    l.sort(key=alphanum)
-    return l
+import statsmodels.formula.api as smf
 
 def delta(orig, dest, df):
     # List of columns to analyze
@@ -178,10 +29,7 @@ def delta(orig, dest, df):
     #print(deltas)
     return deltas
 
-def main():
-    # Unpickling (deserializing) from a file
-    with open('dfmaster.pkl', 'rb') as f:
-        master_df = pickle.load(f)
+def fixPB12(master_df):
     # Fix PB12 with values from B12-partie_2
     # Define the segments to be replaced
     target_segments = ['stress2_MIST', 'nf2_2D']
@@ -207,12 +55,12 @@ def main():
     print("Final segments for PB12:")
     print(master_df.query("Participant == 'PB12'")['Segment'].unique())
 
+def produce_normalized_metrics(master_df):
     log_metrics = ['EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']
     for metric in log_metrics:
         if metric in master_df.columns:
             # Create a dataframe of just baselines
             baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')[metric].mean()
-            print(baselines)
             # Map those baselines back to the main dataframe
             master_df['Participant_Baseline_' + metric] = master_df['Participant'].map(baselines)
             # Apply ln(1+x) to normalize the distribution of EDA/SCR
@@ -238,6 +86,19 @@ def main():
     # Negative values = Reduced regulation (higher stress) | Positive values = Increased relaxation
     master_df['HRV_Delta_over_baseline'] = master_df['HRV_RMSSD'] - master_df['Participant'].map(hrv_baselines)
 
+def main():
+    # Unpickling (deserializing) from a file
+    with open('dfmaster.pkl', 'rb') as f:
+        master_df = pickle.load(f)
+
+    fixPB12(master_df)
+    produce_normalized_metrics(master_df)
+    analysis_of_deltas_with_groups(master_df)
+    LMM_Condition_vrfirst_abbafirst_phase(master_df)
+    LMM_Statsmodels_Condition_x_vrfirst_abbafirst_phase(master_df)
+    return 0
+
+def analysis_of_deltas_with_groups(master_df):
     Group1 = ['PB2', 'PB19', 'PB23', 'PB24']
     Group4 = ['PB4', 'PB13', 'PB15', 'PB17', 'PB21']
     Group2 = ['PB3', 'PB5', 'PB22', 'PB26', 'PB27']
@@ -422,10 +283,6 @@ def main():
         group_data.to_csv(f'Data_{group_name}_5min.csv', index=False)
     print("CSVs exported: Master_Data_5min.csv, Final_Statistical_Results_VR_vs_2D_5min.csv and Data_* for groups")
     print("\n")
-    LMM_Condition_vrfirst_abbafirst_phase(master_df)
-    LMM_Statsmodels_Condition_x_vrfirst_abbafirst_phase(master_df)
-
-    return 0
 
 def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     import statsmodels.formula.api as smf
@@ -458,9 +315,6 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
 
     #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
     clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
-    #print(pd.crosstab(clean_df['vrfirst'], clean_df['abbafirst']))
-    #print(pd.crosstab(clean_df['Condition'], clean_df['vrfirst']))
-    #print(pd.crosstab(clean_df['Condition'], clean_df['abbafirst']))
     # 'Condition' is your categorical variable
     #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors",
     model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst + Phase",
@@ -469,9 +323,53 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     result = model.fit()
     print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst + Phase ===")
     print(result.summary())
+
+    #print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst + Phase ===")
+    #print(result.summary())
     # Export coefficients to CSV
     summary_df = result.summary().tables[1]
     summary_df.to_csv('LMM_Statsmodels_Condition_vrfirst_abbafirst.csv')
+
+def LMM_runmodel(clean_df, formula, title):
+    # 'Condition' is your categorical variable
+    #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors",
+    model = smf.mixedlm(formula,
+                        data=clean_df,
+                        groups=clean_df["Participant"])
+    result = model.fit()
+    m_r2, c_r2 = calculate_r2_mixed(result)
+    print("--- R2 Report "+title+" ---")
+    print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
+    print(f"Conditional R2 (Total model): {c_r2:.3f}")
+    print("\n")
+    print("=== Statsmodels Linear Mixed Model "+formula+" ===")
+    print(result.summary())
+    eda_emms = calculate_emmeans(result) # Use your EDA result object
+    print("--- Estimated Marginal Means ("+title+") ---")
+    for key, value in eda_emms.items():
+        print(f"{key}: {value:.4f}")
+    print("\n")
+    check_model_health(result, title)
+    # Export coefficients to CSV
+    summary_df = result.summary().tables[1]
+    title_wo_blanks = "_".join(title.split())
+    summary_df.to_csv('LMM_Statsmodels_'+title_wo_blanks+'.csv')
+
+def do_VIF_report(clean_df):
+    from statsmodels.stats.outliers_influence import variance_inflation_factor
+    from statsmodels.tools.tools import add_constant
+    # Select your fixed effects
+    features = clean_df[['Condition', 'vrfirst', 'abbafirst', 'Phase']]
+    # Convert to dummies (0 and 1)
+    X = pd.get_dummies(features, drop_first=True).astype(float)
+    X = add_constant(X)
+    # Calculate VIF for each variable
+    vif_data = pd.DataFrame()
+    vif_data["feature"] = X.columns
+    vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(len(X.columns))]
+    print("--- VIF Report ---")
+    print(vif_data)
+    print("\n")
 
 def LMM_Statsmodels_Condition_x_vrfirst_abbafirst_phase(master_df):
     import statsmodels.formula.api as smf
@@ -501,131 +399,17 @@ def LMM_Statsmodels_Condition_x_vrfirst_abbafirst_phase(master_df):
     choices = ['phase1', 'phase2']
     # Create the column (default to 'other' if neither nf1 nor nf2 is found)
     clean_df['Phase'] = np.select(conditions, choices, default='other')
-
     #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
     clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
-    #print(pd.crosstab(clean_df['vrfirst'], clean_df['abbafirst']))
-    #print(pd.crosstab(clean_df['Condition'], clean_df['vrfirst']))
-    #print(pd.crosstab(clean_df['Condition'], clean_df['abbafirst']))
-    # 'Condition' is your categorical variable
-    #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors",
-    model = smf.mixedlm("EDA_Tonic_Mean ~ Condition * vrfirst + abbafirst + Phase",
-                        data=clean_df,
-                        groups=clean_df["Participant"])
-    result = model.fit()
-    m_r2, c_r2 = calculate_r2_mixed(result)
-    print("--- R2 Report EDA Tonic Mean ---")
-    print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
-    print(f"Conditional R2 (Total model): {c_r2:.3f}")
-    print("\n")
-    print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition * vrfirst + abbafirst + Phase ===")
-    print(result.summary())
-    eda_emms = calculate_emmeans(result) # Use your EDA result object
-    print("--- Estimated Marginal Means (EDA Tonic Mean) ---")
-    for key, value in eda_emms.items():
-        print(f"{key}: {value:.4f}")
-    print("\n")
-    check_model_health(result, 'EDA Tonic Mean')
-
-    model = smf.mixedlm("SCR_Freq_Delta ~ Condition * vrfirst + abbafirst + Phase",
-                        data=clean_df,
-                        groups=clean_df["Participant"])
-    result_scr = model.fit()
-    m_r2, c_r2 = calculate_r2_mixed(result_scr)
-    print("--- R2 Report SCR_Freq_Delta ---")
-    print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
-    print(f"Conditional R2 (Total model): {c_r2:.3f}")
-    print("\n")
-    print("=== Statsmodels Linear Mixed Model SCR_Freq_Delta ~ Condition * vrfirst + abbafirst + Phase ===")
-    print(result_scr.summary())
-    scr_emms = calculate_emmeans(result_scr) # Use your SCR result object
-    print("--- Estimated Marginal Means (SCR_Freq_Delta) ---")
-    for key, value in scr_emms.items():
-        print(f"{key}: {value:.4f}")
-    print("\n")
-    check_model_health(result_scr, 'SCR_Freq_Delta')
-
-    model = smf.mixedlm("Sympathetic_Delta ~ Condition * vrfirst + abbafirst + Phase",
-                        data=clean_df,
-                        groups=clean_df["Participant"])
-    result_sym = model.fit()
-    m_r2, c_r2 = calculate_r2_mixed(result_sym)
-    print("--- R2 Report Sympathetic_Delta ---")
-    print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
-    print(f"Conditional R2 (Total model): {c_r2:.3f}")
-    print("\n")
-    print("=== Statsmodels Linear Mixed Model Sympathetic_Delta ~ Condition * vrfirst + abbafirst + Phase ===")
-    print(result_sym.summary())
-    sym_emms = calculate_emmeans(result_sym) # Use your SCR result object
-    print("--- Estimated Marginal Means (Sympathetic_Delta) ---")
-    for key, value in sym_emms.items():
-        print(f"{key}: {value:.4f}")
-    print("\n")
-    check_model_health(result_sym, 'Sympathetic_Delta')
-
-
-    from statsmodels.stats.outliers_influence import variance_inflation_factor
-    from statsmodels.tools.tools import add_constant
-    # Select your fixed effects
-    features = clean_df[['Condition', 'vrfirst', 'abbafirst', 'Phase']]
-    # Convert to dummies (0 and 1)
-    X = pd.get_dummies(features, drop_first=True).astype(float)
-    X = add_constant(X)
-    # Calculate VIF for each variable
-    vif_data = pd.DataFrame()
-    vif_data["feature"] = X.columns
-    vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(len(X.columns))]
-    print("--- VIF Report ---")
-    print(vif_data)
-    print("\n")
-
-    # Export coefficients to CSV
-    summary_df = result.summary().tables[1]
-    summary_df.to_csv('LMM_Statsmodels_Condition_x_vrfirst_abbafirst_phase.csv')
+    LMM_runmodel(clean_df, "EDA_Tonic_Mean ~ Condition * vrfirst + abbafirst + Phase", "EDA Tonic Mean")
     plot_normalized_interaction(clean_df)
-
-
-    model_ecg = smf.mixedlm("ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase",
-                        data=clean_df[clean_df['Segment'].str.contains('baseline') == False],
-                        groups=clean_df[clean_df['Segment'].str.contains('baseline') == False]["Participant"])
-    result_ecg = model_ecg.fit()
-    m_r2, c_r2 = calculate_r2_mixed(result_ecg)
-    print("--- R2 Report ECG Delta over baseline ---")
-    print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
-    print(f"Conditional R2 (Total model): {c_r2:.3f}")
-    print("\n")
-    print("=== Statsmodels Linear Mixed Model ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase ===")
-    print(result_ecg.summary())
-    ecg_emms = calculate_emmeans(result_ecg) # Use your ECG result object
-    print("--- Estimated Marginal Means (ECG Delta over baseline) ---")
-    for key, value in ecg_emms.items():
-        print(f"{key}: {value:.4f}")
-    print("\n")
-    check_model_health(result_ecg, 'ECG Delta over baseline')
-
+    LMM_runmodel(clean_df, "SCR_Freq_Delta ~ Condition * vrfirst + abbafirst + Phase", "SCR Freq Delta")
+    LMM_runmodel(clean_df, "Sympathetic_Delta ~ Condition * vrfirst + abbafirst + Phase", "Sympathetic Delta")
+    LMM_runmodel(clean_df, "ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase", "ECG Delta over baseline")
     plot_dual_interaction(clean_df[clean_df['Segment'].str.contains('baseline') == False])
-
-    model_hrv = smf.mixedlm("HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase", 
-                        data=clean_df[~clean_df['Segment'].str.contains('baseline')], 
-                        groups=clean_df[~clean_df['Segment'].str.contains('baseline')]["Participant"])
-    result_hrv = model_hrv.fit()
-    m_r2, c_r2 = calculate_r2_mixed(result_hrv)
-    print("--- R2 Report HRV Delta over baseline ---")
-    print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
-    print(f"Conditional R2 (Total model): {c_r2:.3f}")
-    print("\n")
-    print("=== Statsmodels Linear Mixed Model HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase ===")
-    print(result_hrv.summary())
-    hrv_emms = calculate_emmeans(result_hrv) # Use your HRV result object
-    print("--- Estimated Marginal Means (HRV Delta over baseline) ---")
-    for key, value in hrv_emms.items():
-        print(f"{key}: {value:.4f}")
-    print("\n")
-    check_model_health(result_hrv, 'HRV Delta over baseline')
-
-
+    LMM_runmodel(clean_df, "HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase", "HRV Delta over baseline")
     plot_triple_signature(clean_df[~clean_df['Segment'].str.contains('baseline')])
-
+    do_VIF_report(clean_df)
     # Calculate descriptive statistics for the three key metrics
     metrics = ['EDA_Tonic_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'ECG_Rate_Mean', 'HRV_RMSSD']
     # Create the summary table
