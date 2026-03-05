@@ -344,12 +344,23 @@ def LMM_runmodel(clean_df, formula, title):
     print("\n")
     print("=== Statsmodels Linear Mixed Model "+formula+" ===")
     print(result.summary())
+
     eda_emms = calculate_emmeans(result) # Use your EDA result object
     print("--- Estimated Marginal Means ("+title+") ---")
     for key, value in eda_emms.items():
         print(f"{key}: {value:.4f}")
     print("\n")
+
+    ci_table = result.conf_int()
+    ci_table.columns = ['Lower 95%', 'Upper 95%']
+    ci_table['Coef'] = result.params
+    # Let's look at just the Fixed Effects (ignoring the Group Var)
+    print("--- Confidence Intervals: (" + title + ") ---")
+    print(ci_table.iloc[:-1, :])
+    print("\n")
+
     check_model_health(result, title)
+
     # Export coefficients to CSV
     summary_df = result.summary().tables[1]
     title_wo_blanks = "_".join(title.split())
