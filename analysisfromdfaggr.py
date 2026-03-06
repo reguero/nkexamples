@@ -52,8 +52,8 @@ def fixPB12(master_df):
     master_df = pd.concat([master_df, source_data], ignore_index=True)
     ## Optional: Remove the temporary 'PB12-partie_2' rows if you no longer need them
     master_df = master_df[master_df['Participant'] != 'PB12-partie_2']
-    print("Final segments for PB12:")
-    print(master_df.query("Participant == 'PB12'")['Segment'].unique())
+    #print("Final segments for PB12:")
+    #print(master_df.query("Participant == 'PB12'")['Segment'].unique())
 
 def produce_normalized_metrics(master_df):
     log_metrics = ['EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']
@@ -93,9 +93,9 @@ def main():
 
     fixPB12(master_df)
     produce_normalized_metrics(master_df)
-    analysis_of_deltas_with_groups(master_df)
+    #analysis_of_deltas_with_groups(master_df)
     LMM_Condition_vrfirst_abbafirst_phase(master_df)
-    LMM_Statsmodels_Condition_x_vrfirst_abbafirst_phase(master_df)
+    #LMM_Condition_x_vrfirst_abbafirst_phase(master_df)
     return 0
 
 def analysis_of_deltas_with_groups(master_df):
@@ -312,23 +312,90 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     choices = ['phase1', 'phase2']
     # Create the column (default to 'other' if neither nf1 nor nf2 is found)
     clean_df['Phase'] = np.select(conditions, choices, default='other')
-
     #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
     clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
-    # 'Condition' is your categorical variable
-    #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors",
-    model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst + Phase",
-                        data=clean_df,
-                        groups=clean_df["Participant"])
-    result = model.fit()
-    print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst + Phase ===")
-    print(result.summary())
 
-    #print("=== Statsmodels Linear Mixed Model EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst + Phase ===")
-    #print(result.summary())
-    # Export coefficients to CSV
-    summary_df = result.summary().tables[1]
-    summary_df.to_csv('LMM_Statsmodels_Condition_vrfirst_abbafirst.csv')
+    #LMM_runmodel(clean_df, "EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst + Phase", "EDA_Tonic_Mean Condition vrfirst abbafirst Phase")
+    LMM_runmodel(clean_df, "SCR_Freq_Delta ~ Condition + vrfirst + abbafirst + Phase", "SCR Freq Delta")
+    LMM_runmodel(clean_df, "Sympathetic_Delta ~ Condition + vrfirst + abbafirst + Phase", "EDA Sympathetic Delta")
+    #LMM_runmodel(clean_df, "ECG_Delta_over_baseline ~ Condition + vrfirst + abbafirst + Phase", "ECG Delta over baseline")
+    LMM_runmodel(clean_df, "HRV_Delta_over_baseline ~ Condition + vrfirst + abbafirst + Phase", "HRV RMSSD Delta over baseline")
+ 
+    do_VIF_report(clean_df)
+
+    # Calculate descriptive statistics for the key metrics
+    #metrics = ['EDA_Tonic_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'ECG_Rate_Mean', 'HRV_RMSSD']
+    metrics = ['Sympathetic_Percent', 'SCR_Frequency_PerMin', 'HRV_RMSSD']
+    # Create the summary table
+    desc_table = clean_df.groupby(['vrfirst', 'Condition'])[metrics].agg(['mean', 'std']).round(3)
+    # Reset index for a cleaner look if exporting to CSV
+    # desc_table.to_csv("Appendix_Descriptives.csv")
+    print("--- Descriptive statistics report for the key metrics ---")
+    print(desc_table)
+
+def get_contrast(modelresult, formula):
+    # 1. Get the names of the coefficients
+    fe_names = modelresult.model.exog_names
+    # 2. Find the index of the condition
+    try:
+        target_idx = fe_names.index(formula)
+        # 3. Create a 2D matrix (1 row, N columns)
+        # This satisfies the internal check: r_matrix.shape[1] == self.k_fe
+        contrast_matrix = np.zeros((1, len(fe_names)))
+        contrast_matrix[0, target_idx] = 1
+        # 4. Run the test
+        condition_contrast = modelresult.t_test(contrast_matrix)
+        print("Contrast for " + formula)
+        print(condition_contrast)
+    except ValueError:
+        print("Warning: 'Condition[T.VR]' not found in this model's fixed effects.")
+
+def get_all_contrasts(result):
+    fe_names = result.model.exog_names
+    contrast_results = []
+
+    for name in fe_names:
+        # Create the 2D contrast matrix (1 x k_fe)
+        contrast_matrix = np.zeros((1, len(fe_names)))
+        target_idx = fe_names.index(name)
+        contrast_matrix[0, target_idx] = 1
+
+        # Run the test
+        t_test_res = result.t_test(contrast_matrix)
+
+        # Calculate Effect Sizes:
+        z_val = t_test_res.tvalue[0][0]
+        n_obs = result.nobs
+
+        # Calculate r (correlation coefficient effect size)
+        r_effect = np.abs(z_val) / np.sqrt(z_val**2 + n_obs)
+
+        # Calculate Cohen's d equivalent
+        d_effect = (2 * z_val) / np.sqrt(n_obs)
+
+        # Extract statistics
+        # result.t_test returns a ContrastResults object
+        contrast_results.append({
+            "Effect": name,
+            "Coefficient": t_test_res.effect[0],
+            "Std.Err": t_test_res.sd[0],
+            "z-stat": t_test_res.tvalue[0][0], # statsmodels calls it tvalue even for z
+            "p-value": t_test_res.pvalue,
+            "r_effect": r_effect,
+            "d_effect": d_effect
+        })
+    return pd.DataFrame(contrast_results)
+
+def get_standardized_beta(clean_df, modelresult, outcome):
+    # Manual calculation for Condition[T.VR]
+    b = modelresult.params['Condition[T.VR]']
+    sd_y = clean_df['Sympathetic_Delta'].std()
+    # For a dummy variable (0 or 1), SD is sqrt(p * (1-p))
+    # Or simply take the std of the encoded column
+    condition_numeric = (clean_df['Condition'] == 'VR').astype(int)
+    sd_x = condition_numeric.std()
+    std_beta = b * (sd_x / sd_y)
+    return std_beta
 
 def LMM_runmodel(clean_df, formula, title):
     # 'Condition' is your categorical variable
@@ -337,20 +404,28 @@ def LMM_runmodel(clean_df, formula, title):
                         data=clean_df,
                         groups=clean_df["Participant"])
     result = model.fit()
+    print("=== Statsmodels Linear Mixed Model "+formula+" ===")
+    print(result.summary())
     m_r2, c_r2 = calculate_r2_mixed(result)
     print("--- R2 Report "+title+" ---")
     print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
     print(f"Conditional R2 (Total model): {c_r2:.3f}")
     print("\n")
-    print("=== Statsmodels Linear Mixed Model "+formula+" ===")
-    print(result.summary())
+    if "Condition * vrfirst" in formula:
+        emms = calculate_emmeans(result) # Use your result object
+        print("--- Estimated Marginal Means ("+title+") ---")
+        for key, value in emms.items():
+            print(f"{key}: {value:.4f}")
+        print("\n")
 
-    eda_emms = calculate_emmeans(result) # Use your EDA result object
-    print("--- Estimated Marginal Means ("+title+") ---")
-    for key, value in eda_emms.items():
-        print(f"{key}: {value:.4f}")
+    df_contrasts = get_all_contrasts(result)
+    print("--- Contrasts and Effect Sizes: (" + title + ") ---")
+    print(df_contrasts)
     print("\n")
-
+    outcome = formula.split()[0]
+    std_beta = get_standardized_beta(clean_df, result, outcome)
+    print(f"Standardized Beta for {outcome}: {std_beta:.3f}")
+    print("\n")
     ci_table = result.conf_int()
     ci_table.columns = ['Lower 95%', 'Upper 95%']
     ci_table['Coef'] = result.params
@@ -382,7 +457,7 @@ def do_VIF_report(clean_df):
     print(vif_data)
     print("\n")
 
-def LMM_Statsmodels_Condition_x_vrfirst_abbafirst_phase(master_df):
+def LMM_Condition_x_vrfirst_abbafirst_phase(master_df):
     import statsmodels.formula.api as smf
     clean_df = master_df.copy()
     # Select rows where 'baseline' is NOT in the Segment string
@@ -415,13 +490,13 @@ def LMM_Statsmodels_Condition_x_vrfirst_abbafirst_phase(master_df):
     LMM_runmodel(clean_df, "EDA_Tonic_Mean ~ Condition * vrfirst + abbafirst + Phase", "EDA Tonic Mean")
     plot_normalized_interaction(clean_df)
     LMM_runmodel(clean_df, "SCR_Freq_Delta ~ Condition * vrfirst + abbafirst + Phase", "SCR Freq Delta")
-    LMM_runmodel(clean_df, "Sympathetic_Delta ~ Condition * vrfirst + abbafirst + Phase", "Sympathetic Delta")
+    LMM_runmodel(clean_df, "Sympathetic_Delta ~ Condition * vrfirst + abbafirst + Phase", "EDA Sympathetic Delta")
     LMM_runmodel(clean_df, "ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase", "ECG Delta over baseline")
     plot_dual_interaction(clean_df[clean_df['Segment'].str.contains('baseline') == False])
-    LMM_runmodel(clean_df, "HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase", "HRV Delta over baseline")
+    LMM_runmodel(clean_df, "HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase", "HRV RMSSD Delta over baseline")
     plot_triple_signature(clean_df[~clean_df['Segment'].str.contains('baseline')])
     do_VIF_report(clean_df)
-    # Calculate descriptive statistics for the three key metrics
+    # Calculate descriptive statistics for the key metrics
     metrics = ['EDA_Tonic_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'ECG_Rate_Mean', 'HRV_RMSSD']
     # Create the summary table
     desc_table = clean_df.groupby(['vrfirst', 'Condition'])[metrics].agg(['mean', 'std']).round(3)
