@@ -76,7 +76,8 @@ def produce_normalized_metrics(master_df):
     sym_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['EDA_SympatheticN'].mean()
     # Map those baselines back to the main dataframe
     master_df['Sympathetic_Delta'] = logit(master_df['EDA_SympatheticN'].clip(0.001, 0.999)) - logit(master_df['Participant'].map(sym_baselines).clip(0.001, 0.999))
-    master_df['EDA_Sympathetic_Norm'] = logit(master_df['EDA_SympatheticN'].clip(0.001, 0.999))
+    #master_df['EDA_Sympathetic_Norm'] = np.log(master_df['EDA_SympatheticN'] + 1e-6)
+    master_df['EDA_Sympathetic_Norm'] = np.log1p(master_df['EDA_SympatheticN'])
 
     # Get average baseline per participant for ECG
     ecg_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['ECG_Rate_Mean'].mean()
@@ -88,10 +89,12 @@ def produce_normalized_metrics(master_df):
     # Map and subtract to get the "ms Change"
     # Negative values = Reduced regulation (higher stress) | Positive values = Increased relaxation
     master_df['HRV_Delta_over_baseline'] = master_df['HRV_RMSSD'] - master_df['Participant'].map(hrv_baselines)
+    #master_df['HRV_RMSSD_Norm'] = np.log(master_df['HRV_RMSSD'] + 1e-6) 
+    master_df['HRV_RMSSD_Norm'] = np.log1p(master_df['HRV_RMSSD']) 
 
 def produce_deltas(master_df):
     # Define the metrics to calculate
-    metrics = ["SCR_Freq_Norm", "EDA_Sympathetic_Norm", "HRV_RMSSD"]
+    metrics = ["SCR_Freq_Norm", "EDA_Sympathetic_Norm", "HRV_RMSSD_Norm"]
     # Loop through each metric to create the reactivity scores
     for metric in metrics:
         # Filter for the specific segments to calculate the delta
@@ -351,11 +354,17 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
                           ("EDA_Sympathetic_Norm_delta", "EDA Sympathetic Norm delta"),
                           #("EDA_Tonic_Mean", "EDA Tonic Mean"),
                           #("ECG_Delta_over_baseline", "ECG Delta over baseline"),
-                          ("HRV_RMSSD_delta", "HRV RMSSD delta")]:
+                          ("HRV_RMSSD_Norm_delta", "HRV RMSSD Norm delta")]:
         clean_df[metric] = pd.to_numeric(clean_df[metric], errors='coerce')
         clean_df = clean_df.dropna(subset=[metric]).reset_index(drop=True)
         formula = metric + " ~ Condition + vrfirst + abbafirst + Phase + Baseline"
         result = LMM_runmodel(clean_df, formula, title)
+        if metric == 'HRV_RMSSD_Norm_delta':
+            #Switch to OLS since Group Var is 0
+            ols_model = smf.ols(formula, data=clean_df).fit()
+            print("--- OLS model for "+formula+" ---")
+            print(ols_model.summary())
+            print("\n")
         metrics.append(metric)
         pvalues.append(result.pvalues["Condition[T.VR]"])
         
