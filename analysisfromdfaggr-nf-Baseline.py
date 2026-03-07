@@ -102,9 +102,10 @@ def produce_deltas(master_df):
         nf2_values = master_df[master_df['Segment'].str.contains('nf2')].set_index('Participant')[metric]
         stress1_values = master_df[master_df['Segment'].str.contains('stress1')].set_index('Participant')[metric]
         stress2_values = master_df[master_df['Segment'].str.contains('stress2')].set_index('Participant')[metric]
+        baseline_values = master_df[master_df['Segment'] == 'baseline'].set_index('Participant')[metric]
         # Calculate the difference: Stress1 - Nf1
-        diff_series1 = nf1_values - stress1_values
-        diff_series2 = nf2_values - stress2_values
+        diff_series1 = nf1_values - baseline_values
+        diff_series2 = nf2_values - baseline_values
         # Create the new metric name (e.g., 'SCR_Freq_Norm_reactivity')
         diff_col_name = f"{metric}_delta"
         # Initialize the column with NaN
@@ -116,10 +117,10 @@ def produce_deltas(master_df):
         mask2 = master_df['Segment'].str.contains('nf2')
         master_df.loc[mask2, diff_col_name] = master_df.loc[mask2, 'Participant'].map(diff_series2)
 
-    ## Check the result for the first participant's nf1 row
-    #print(master_df[master_df['Segment'].str.contains('nf1')][['Participant', 'Segment'] + [f"{m}_delta" for m in metrics]].head())
-    ## Check the result for the first participant's nf2 row
-    #print(master_df[master_df['Segment'].str.contains('nf2')][['Participant', 'Segment'] + [f"{m}_delta" for m in metrics]].head())
+    # Check the result for the first participant's nf1 row
+    print(master_df[master_df['Segment'].str.contains('nf1')][['Participant', 'Segment'] + [f"{m}_delta" for m in metrics]].head())
+    # Check the result for the first participant's nf2 row
+    print(master_df[master_df['Segment'].str.contains('nf2')][['Participant', 'Segment'] + [f"{m}_delta" for m in metrics]].head())
 
 
 def main():
@@ -324,18 +325,20 @@ def analysis_of_deltas_with_groups(master_df):
 def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     import statsmodels.formula.api as smf
     clean_df = master_df.copy()
+    # Select rows where 'baseline' is NOT in the Segment string
+    clean_df = clean_df[~clean_df['Segment'].str.contains('baseline', case=False, na=False)]
+    #clean_df['Baseline'] = clean_df['Segment'].apply(lambda x: 'baseline' if 'baseline' in x else 'not_baseline')
     clean_df['Condition'] = clean_df['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
-    clean_df['Baseline'] = clean_df['Segment'].apply(lambda x: 'baseline' if 'baseline' in x else 'not_baseline')
     # Try to use linearly independent conditions
-    # 1. Identify participants who have at least one segment named 'nf1_VR'
+    # Identify participants who have at least one segment named 'nf1_VR'
     vr_first_participants = clean_df.loc[clean_df['Segment'] == 'nf1_VR', 'Participant'].unique()
-    # 2. Create the column: If the participant is in that list, mark all their rows as 'VRfirst'
+    # Create the column: If the participant is in that list, mark all their rows as 'VRfirst'
     clean_df['vrfirst'] = clean_df['Participant'].apply(
         lambda x: 'VRfirst' if x in vr_first_participants else 'VRlast'
     )
-    # 1. Identify participants who have at least one segment named 'stress1_ABBA'
+    # Identify participants who have at least one segment named 'stress1_ABBA'
     abba_first_participants = clean_df.loc[clean_df['Segment'] == 'stress1_ABBA', 'Participant'].unique()
-    # 2. Create the column: If the participant is in that list, mark all their rows as 'ABBAfirst'
+    # Create the column: If the participant is in that list, mark all their rows as 'ABBAfirst'
     clean_df['abbafirst'] = clean_df['Participant'].apply(
         lambda x: 'ABBAfirst' if x in abba_first_participants else 'ABBAlast'
     )
@@ -357,7 +360,7 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
                           ("HRV_RMSSD_Norm_delta", "HRV RMSSD Norm delta")]:
         clean_df[metric] = pd.to_numeric(clean_df[metric], errors='coerce')
         clean_df = clean_df.dropna(subset=[metric]).reset_index(drop=True)
-        formula = metric + " ~ Condition + vrfirst + abbafirst + Phase + Baseline"
+        formula = metric + " ~ Condition + vrfirst + abbafirst + Phase"
         result = LMM_runmodel(clean_df, formula, title)
         ## Try OLS since Group Var is 0
         #ols_model = smf.ols(formula, data=clean_df).fit()
