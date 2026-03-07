@@ -315,23 +315,46 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
     clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
 
-    #LMM_runmodel(clean_df, "EDA_Tonic_Mean ~ Condition + vrfirst + abbafirst + Phase", "EDA_Tonic_Mean Condition vrfirst abbafirst Phase")
-    LMM_runmodel(clean_df, "SCR_Freq_Delta ~ Condition + vrfirst + abbafirst + Phase", "SCR Freq Delta")
-    LMM_runmodel(clean_df, "Sympathetic_Delta ~ Condition + vrfirst + abbafirst + Phase", "EDA Sympathetic Delta")
-    #LMM_runmodel(clean_df, "ECG_Delta_over_baseline ~ Condition + vrfirst + abbafirst + Phase", "ECG Delta over baseline")
-    LMM_runmodel(clean_df, "HRV_Delta_over_baseline ~ Condition + vrfirst + abbafirst + Phase", "HRV RMSSD Delta over baseline")
- 
+    metrics = []
+    pvalues = []
+    for metric, title in [ ("SCR_Freq_Delta", "SCR Freq Delta"),
+                          ("Sympathetic_Delta", "EDA Sympathetic Delta"),
+                          #("EDA_Tonic_Mean", "EDA Tonic Mean"),
+                          #("ECG_Delta_over_baseline", "ECG Delta over baseline"),
+                          ("HRV_Delta_over_baseline", "HRV RMSSD Delta over baseline")]:
+        formula = metric + " ~ Condition + vrfirst + abbafirst + Phase"
+        result = LMM_runmodel(clean_df, formula, title)
+        metrics.append(metric)
+        pvalues.append(result.pvalues["Condition[T.VR]"])
+        
+    summary_df = get_fdr(metrics,pvalues)
+    print("--- FDR (Benjamini-Hochberg) ---")
+    print(summary_df)
+    print("\n")
+
     do_VIF_report(clean_df)
 
     # Calculate descriptive statistics for the key metrics
-    #metrics = ['EDA_Tonic_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'ECG_Rate_Mean', 'HRV_RMSSD']
-    metrics = ['Sympathetic_Percent', 'SCR_Frequency_PerMin', 'HRV_RMSSD']
     # Create the summary table
     desc_table = clean_df.groupby(['vrfirst', 'Condition'])[metrics].agg(['mean', 'std']).round(3)
     # Reset index for a cleaner look if exporting to CSV
     # desc_table.to_csv("Appendix_Descriptives.csv")
     print("--- Descriptive statistics report for the key metrics ---")
     print(desc_table)
+
+def get_fdr(metrics,pvalues):
+    from statsmodels.stats.multitest import multipletests
+    # Create a summary dataframe
+    summary_df = pd.DataFrame({
+        'Metric': metrics,
+        'Raw_P': pvalues
+    })
+    # Apply FDR (Benjamini-Hochberg)
+    # returns: (reject_array, corrected_p_array, alphacSidak, alphacBonf)
+    results = multipletests(summary_df['Raw_P'], method='fdr_bh')
+    summary_df['Adjusted_P'] = results[1]
+    summary_df['Significant'] = results[0]
+    return(summary_df)
 
 def get_contrast(modelresult, formula):
     # 1. Get the names of the coefficients
@@ -411,12 +434,15 @@ def LMM_runmodel(clean_df, formula, title):
     print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
     print(f"Conditional R2 (Total model): {c_r2:.3f}")
     print("\n")
+    print("--- Estimated Marginal Means ("+title+") ---")
     if "Condition * vrfirst" in formula:
         emms = calculate_emmeans(result) # Use your result object
-        print("--- Estimated Marginal Means ("+title+") ---")
         for key, value in emms.items():
             print(f"{key}: {value:.4f}")
-        print("\n")
+    else:
+        emms_table = calculate_emms_main_effects(result, clean_df)
+        print(emms_table.to_string(index=False))
+    print("\n")
 
     df_contrasts = get_all_contrasts(result)
     print("--- Contrasts and Effect Sizes: (" + title + ") ---")
@@ -440,6 +466,8 @@ def LMM_runmodel(clean_df, formula, title):
     summary_df = result.summary().tables[1]
     title_wo_blanks = "_".join(title.split())
     summary_df.to_csv('LMM_Statsmodels_'+title_wo_blanks+'.csv')
+
+    return result
 
 def do_VIF_report(clean_df):
     from statsmodels.stats.outliers_influence import variance_inflation_factor
@@ -505,19 +533,30 @@ def LMM_Condition_x_vrfirst_abbafirst_phase(master_df):
     print("--- Descriptive statistics report for the key metrics ---")
     print(desc_table)
 
-# Calculate EMMs manually from the fixed effects
-def calculate_base_emmeans(result):
-    params = result.fe_params
-    # Logic: Intercept + Coef_Cond * X + Coef_Order * Y + Coef_Int * (X*Y)
-    # Mapping: VR=1, 2D=0; VRlast=1, VRfirst=0
-    emm = {
-        "VRfirst_2D": params['Intercept'],
-        "VRfirst_VR": params['Intercept'] + params['Condition[T.VR]'],
-        "VRlast_2D":  params['Intercept'] + params['vrfirst[T.VRlast]'],
-        "VRlast_VR":  params['Intercept'] + params['Condition[T.VR]'] + 
-                      params['vrfirst[T.VRlast]'] + params['Condition[T.VR]:vrfirst[T.VRlast]']
-    }
-    return emm
+def calculate_emms_main_effects(result, df):
+    # Extract parameters and covariance matrix
+    params = result.params
+    cov = result.cov_params()
+    # --- 2D Condition (The Intercept) ---
+    mean_2d = params['Intercept']
+    se_2d = result.bse['Intercept']
+    # --- VR Condition (Intercept + VR Coefficient) ---
+    mean_vr = params['Intercept'] + params['Condition[T.VR]']
+    # Formula for variance of a sum: Var(A+B) = Var(A) + Var(B) + 2*Cov(A,B)
+    var_vr = cov.loc['Intercept', 'Intercept'] + \
+             cov.loc['Condition[T.VR]', 'Condition[T.VR]'] + \
+             2 * cov.loc['Intercept', 'Condition[T.VR]']
+    se_vr = np.sqrt(var_vr)
+    # Build the DataFrame
+    emm_df = pd.DataFrame({
+        'Condition': ['2D (Control)', 'VR (Treatment)'],
+        'EMM (Mean)': [mean_2d, mean_vr],
+        'SE': [se_2d, se_vr]
+    })
+    # Add 95% Confidence Intervals
+    emm_df['Lower 95% CI'] = emm_df['EMM (Mean)'] - (1.96 * emm_df['SE'])
+    emm_df['Upper 95% CI'] = emm_df['EMM (Mean)'] + (1.96 * emm_df['SE'])
+    return emm_df
 
 def calculate_emmeans(result):
     p = result.fe_params
