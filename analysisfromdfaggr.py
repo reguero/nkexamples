@@ -77,7 +77,7 @@ def produce_normalized_metrics(master_df):
     # Map those baselines back to the main dataframe
     master_df['Sympathetic_Delta'] = logit(master_df['EDA_SympatheticN'].clip(0.001, 0.999)) - logit(master_df['Participant'].map(sym_baselines).clip(0.001, 0.999))
     #master_df['EDA_Sympathetic_Norm'] = np.log(master_df['EDA_SympatheticN'] + 1e-6)
-    master_df['EDA_Sympathetic_Norm'] = np.log1p(master_df['EDA_SympatheticN'])
+    master_df['EDA_Sympathetic_Norm'] = np.log1p(master_df['EDA_SympatheticN'])*100
 
     # Get average baseline per participant for ECG
     ecg_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['ECG_Rate_Mean'].mean()
