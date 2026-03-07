@@ -517,7 +517,8 @@ def LMM_runmodel(clean_df, formula, title):
         print(emms_table.to_string(index=False))
         plot_emms_main_effects(emms_table, outcome, title, fdr_table)
     print("\n")
-
+    boxviostrip_plot(clean_df, title, outcome)
+    plot_raincloud(clean_df, outcome, ' '.join(title.split()[:2]), 'Delta')
     df_contrasts = get_all_contrasts(result)
     print("--- Contrasts and Effect Sizes: (" + title + ") ---")
     print(df_contrasts)
@@ -541,6 +542,66 @@ def LMM_runmodel(clean_df, formula, title):
     summary_df.to_csv('LMM_Statsmodels_'+title_wo_blanks+'.csv')
 
     return result
+
+def plot_raincloud(df, y_col, title, ylabel):
+    import ptitprince as pt
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    # Create the Raincloud Plot
+    pt.RainCloud(x = 'Condition', y = y_col, data = df,
+                 hue='Condition',
+                 palette = ["#3498db", "#e74c3c"],
+                 bw = .2,        # Smoothness of the cloud
+                 width_viol = .6,
+                 ax = ax,
+                 orient = 'h',   # Horizontal looks best for rainclouds
+                 alpha = .65,
+                 dodge = True)
+
+    # Styling
+    plt.axvline(0, color='black', linestyle='--', alpha=0.5) # Zero line
+    plt.title(title, fontsize=15, pad=20)
+    plt.xlabel(ylabel)
+    plt.ylabel('Experimental Condition')
+
+    sns.despine(offset=10, trim=True)
+    plt.tight_layout()
+    plt.show()
+
+def boxviostrip_plot(master_df, title, outcome):
+    # Assuming master_df contains your individual delta rows
+    plt.figure(figsize=(10, 6))
+    sns.set_style("whitegrid")
+
+    # Violinplot (The 'Cloud' / Density)
+    sns.violinplot(x='Condition', y=outcome, data=master_df,
+                   hue='Condition', legend=False,
+                   split=True, inner=None, alpha=0.3, palette=['#3498db', '#e74c3c'], cut=0)
+    # Placed on top of violin but below the points
+    sns.boxplot(x='Condition', y=outcome, data=master_df,
+                hue='Condition', legend=False,
+                width=0.15, palette=['#3498db', '#e74c3c'],
+                showfliers=False, boxprops={'zorder': 2})
+    # 3. Stripplot (The 'Rain' / Raw Data)
+    # Increased size slightly and set zorder to ensure points are on top
+    sns.stripplot(x='Condition', y=outcome, data=master_df,
+                  hue='Condition', legend=False,
+                  size=5, jitter=True, alpha=0.6,
+                  palette=['#3498db', '#e74c3c'], zorder=3)
+
+    plt.axhline(0, ls='--', color='gray', alpha=0.7)
+
+    # Fixed the title string formatting
+    clean_title = ' '.join(title.split()[:2])
+    plt.title(f'Individual Distribution of {clean_title} Reactivity', fontsize=14)
+
+    plt.ylabel('Delta (Stress - Baseline)')
+    plt.xlabel('Condition')
+
+    plt.tight_layout()
+    plt.savefig(f'boxviostrip_{outcome}.png', dpi=300)
+    plt.show()
+    plt.close()
 
 def plot_forest_data(ci_table, title, outcome):
     # Data from your Model Contrasts
