@@ -338,9 +338,20 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     # Create the summary table
     desc_table = clean_df.groupby(['vrfirst', 'Condition'])[metrics].agg(['mean', 'std']).round(3)
     # Reset index for a cleaner look if exporting to CSV
-    # desc_table.to_csv("Appendix_Descriptives.csv")
-    print("--- Descriptive statistics report for the key metrics ---")
+    desc_table.to_csv("Appendix_Descriptives_main_efffect_models_normalized.csv")
+    print("--- Descriptive statistics report for the key metrics (normalized) ---")
     print(desc_table)
+    print("\n")
+
+    rawmetrics = ['SCR_Frequency_PerMin', 'Sympathetic_Percent', 'HRV_RMSSD']
+    desc_table = clean_df.groupby(['vrfirst', 'Condition'])[rawmetrics].agg(['mean', 'std']).round(3)
+    # Reset index for a cleaner look if exporting to CSV
+    desc_table.to_csv("Appendix_Descriptives_main_efffect_models.csv")
+    print("--- Descriptive statistics report for the key metrics (raw) ---")
+    print(desc_table)
+    print("\n")
+    print("(Sympathetic_Percent = EDA_SympatheticN * 100)")
+
 
 def get_fdr(metrics,pvalues):
     from statsmodels.stats.multitest import multipletests
