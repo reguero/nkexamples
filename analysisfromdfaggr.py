@@ -328,7 +328,7 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
         pvalues.append(result.pvalues["Condition[T.VR]"])
         
     summary_df = get_fdr(metrics,pvalues)
-    print("--- FDR (Benjamini-Hochberg) ---")
+    print("--- FDR (Benjamini-Hochberg) for main metrics ---")
     print(summary_df)
     print("\n")
 
@@ -352,6 +352,20 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     print("\n")
     print("(Sympathetic_Percent = EDA_SympatheticN * 100)")
 
+def calculate_fdr_for_model(result):
+    from statsmodels.stats.multitest import multipletests
+    # Get all p-values except the Intercept
+    p_series = result.pvalues.drop('Intercept')
+    # Apply Benjamini-Hochberg
+    reject, p_adj, _, _ = multipletests(p_series, method='fdr_bh')
+    # Create a clean results table
+    fdr_df = pd.DataFrame({
+        'Predictor': p_series.index,
+        'Raw_P': p_series.values,
+        'FDR_Adjusted_P': p_adj,
+        'Significant': reject
+    })
+    return fdr_df
 
 def get_fdr(metrics,pvalues):
     from statsmodels.stats.multitest import multipletests
@@ -438,8 +452,12 @@ def LMM_runmodel(clean_df, formula, title):
                         data=clean_df,
                         groups=clean_df["Participant"])
     result = model.fit()
-    print("=== Statsmodels Linear Mixed Model "+formula+" ===")
+    print("=== Statsmodels Linear Mixed Model " + formula + " ===")
     print(result.summary())
+    fdr_table = calculate_fdr_for_model(result)
+    print("--- FDR (Benjamini-Hochberg) for model " + formula + " ---")
+    print(fdr_table)
+    print("\n")
     m_r2, c_r2 = calculate_r2_mixed(result)
     print("--- R2 Report "+title+" ---")
     print(f"Marginal R2 (Fixed effects): {m_r2:.3f}")
@@ -470,9 +488,7 @@ def LMM_runmodel(clean_df, formula, title):
     print("--- Confidence Intervals: (" + title + ") ---")
     print(ci_table.iloc[:-1, :])
     print("\n")
-
     check_model_health(result, title)
-
     # Export coefficients to CSV
     summary_df = result.summary().tables[1]
     title_wo_blanks = "_".join(title.split())
