@@ -65,15 +65,18 @@ def produce_normalized_metrics(master_df):
             master_df['Participant_Baseline_' + metric] = master_df['Participant'].map(baselines)
             # Apply ln(1+x) to normalize the distribution of EDA/SCR
             master_df[metric] = np.log1p(master_df[metric]) - np.log1p(master_df['Participant_Baseline_' + metric])
+        master_df[metric] = np.log1p(master_df[metric])
 
     # Get average baseline per participant for SCR_Frequency_PerMin
     scr_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['SCR_Frequency_PerMin'].mean()
     # Map those baselines back to the main dataframe
     master_df['SCR_Freq_Delta'] = np.sqrt(master_df['SCR_Frequency_PerMin']) - np.sqrt(master_df['Participant'].map(scr_baselines))
+    master_df['SCR_Freq_Norm'] = np.sqrt(master_df['SCR_Frequency_PerMin'])
 
     sym_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['EDA_SympatheticN'].mean()
     # Map those baselines back to the main dataframe
     master_df['Sympathetic_Delta'] = logit(master_df['EDA_SympatheticN'].clip(0.001, 0.999)) - logit(master_df['Participant'].map(sym_baselines).clip(0.001, 0.999))
+    master_df['EDA_Sympathetic_Norm'] = logit(master_df['EDA_SympatheticN'].clip(0.001, 0.999))
 
     # Get average baseline per participant for ECG
     ecg_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['ECG_Rate_Mean'].mean()
@@ -86,6 +89,36 @@ def produce_normalized_metrics(master_df):
     # Negative values = Reduced regulation (higher stress) | Positive values = Increased relaxation
     master_df['HRV_Delta_over_baseline'] = master_df['HRV_RMSSD'] - master_df['Participant'].map(hrv_baselines)
 
+def produce_deltas(master_df):
+    # Define the metrics to calculate
+    metrics = ["SCR_Freq_Norm", "EDA_Sympathetic_Norm", "HRV_RMSSD"]
+    # Loop through each metric to create the reactivity scores
+    for metric in metrics:
+        # Filter for the specific segments to calculate the delta
+        nf1_values = master_df[master_df['Segment'].str.contains('nf1')].set_index('Participant')[metric]
+        nf2_values = master_df[master_df['Segment'].str.contains('nf2')].set_index('Participant')[metric]
+        stress1_values = master_df[master_df['Segment'].str.contains('stress1')].set_index('Participant')[metric]
+        stress2_values = master_df[master_df['Segment'].str.contains('stress2')].set_index('Participant')[metric]
+        # Calculate the difference: Stress1 - Nf1
+        diff_series1 = nf1_values - stress1_values
+        diff_series2 = nf2_values - stress2_values
+        # Create the new metric name (e.g., 'SCR_Freq_Norm_reactivity')
+        diff_col_name = f"{metric}_delta"
+        # Initialize the column with NaN
+        master_df[diff_col_name] = np.nan
+        # Map the nf1 calculated differences to the 'nf1' rows
+        mask1 = master_df['Segment'].str.contains('nf1')
+        master_df.loc[mask1, diff_col_name] = master_df.loc[mask1, 'Participant'].map(diff_series1)
+        # Map the nf2 calculated differences to the 'nf2' rows
+        mask2 = master_df['Segment'].str.contains('nf2')
+        master_df.loc[mask2, diff_col_name] = master_df.loc[mask2, 'Participant'].map(diff_series2)
+
+    ## Check the result for the first participant's nf1 row
+    #print(master_df[master_df['Segment'].str.contains('nf1')][['Participant', 'Segment'] + [f"{m}_delta" for m in metrics]].head())
+    ## Check the result for the first participant's nf2 row
+    #print(master_df[master_df['Segment'].str.contains('nf2')][['Participant', 'Segment'] + [f"{m}_delta" for m in metrics]].head())
+
+
 def main():
     # Unpickling (deserializing) from a file
     with open('dfmaster.pkl', 'rb') as f:
@@ -93,6 +126,7 @@ def main():
 
     fixPB12(master_df)
     produce_normalized_metrics(master_df)
+    produce_deltas(master_df)
     #analysis_of_deltas_with_groups(master_df)
     LMM_Condition_vrfirst_abbafirst_phase(master_df)
     #LMM_Condition_x_vrfirst_abbafirst_phase(master_df)
@@ -287,9 +321,8 @@ def analysis_of_deltas_with_groups(master_df):
 def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     import statsmodels.formula.api as smf
     clean_df = master_df.copy()
-    # Select rows where 'baseline' is NOT in the Segment string
-    clean_df = clean_df[~clean_df['Segment'].str.contains('baseline', case=False, na=False)]
     clean_df['Condition'] = clean_df['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
+    clean_df['Baseline'] = clean_df['Segment'].apply(lambda x: 'baseline' if 'baseline' in x else 'not_baseline')
     # Try to use linearly independent conditions
     # 1. Identify participants who have at least one segment named 'nf1_VR'
     vr_first_participants = clean_df.loc[clean_df['Segment'] == 'nf1_VR', 'Participant'].unique()
@@ -312,17 +345,16 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     choices = ['phase1', 'phase2']
     # Create the column (default to 'other' if neither nf1 nor nf2 is found)
     clean_df['Phase'] = np.select(conditions, choices, default='other')
-    #clean_df['EDA_Tonic_Mean'] = pd.to_numeric(clean_df['EDA_Tonic_Mean'], errors='coerce')
-    clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
-
     metrics = []
     pvalues = []
-    for metric, title in [ ("SCR_Freq_Delta", "SCR Freq Delta"),
-                          ("Sympathetic_Delta", "EDA Sympathetic Delta"),
+    for metric, title in [ ("SCR_Freq_Norm_delta", "SCR Freq Norm delta"),
+                          ("EDA_Sympathetic_Norm_delta", "EDA Sympathetic Norm delta"),
                           #("EDA_Tonic_Mean", "EDA Tonic Mean"),
                           #("ECG_Delta_over_baseline", "ECG Delta over baseline"),
-                          ("HRV_Delta_over_baseline", "HRV RMSSD Delta over baseline")]:
-        formula = metric + " ~ Condition + vrfirst + abbafirst + Phase"
+                          ("HRV_RMSSD_delta", "HRV RMSSD delta")]:
+        clean_df[metric] = pd.to_numeric(clean_df[metric], errors='coerce')
+        clean_df = clean_df.dropna(subset=[metric]).reset_index(drop=True)
+        formula = metric + " ~ Condition + vrfirst + abbafirst + Phase + Baseline"
         result = LMM_runmodel(clean_df, formula, title)
         metrics.append(metric)
         pvalues.append(result.pvalues["Condition[T.VR]"])
@@ -437,7 +469,7 @@ def get_all_contrasts(result):
 def get_standardized_beta(clean_df, modelresult, outcome):
     # Manual calculation for Condition[T.VR]
     b = modelresult.params['Condition[T.VR]']
-    sd_y = clean_df['Sympathetic_Delta'].std()
+    sd_y = clean_df['EDA_Sympathetic_Norm'].std()
     # For a dummy variable (0 or 1), SD is sqrt(p * (1-p))
     # Or simply take the std of the encoded column
     condition_numeric = (clean_df['Condition'] == 'VR').astype(int)
@@ -515,8 +547,8 @@ def do_VIF_report(clean_df):
 def LMM_Condition_x_vrfirst_abbafirst_phase(master_df):
     import statsmodels.formula.api as smf
     clean_df = master_df.copy()
-    # Select rows where 'baseline' is NOT in the Segment string
-    clean_df = clean_df[~clean_df['Segment'].str.contains('baseline', case=False, na=False)]
+    ## Select rows where 'baseline' is NOT in the Segment string
+    #clean_df = clean_df[~clean_df['Segment'].str.contains('baseline', case=False, na=False)]
     clean_df['Condition'] = clean_df['Segment'].apply(lambda x: 'VR' if 'VR' in x else '2D')
     # Try to use linearly independent conditions
     # 1. Identify participants who have at least one segment named 'nf1_VR'
@@ -544,12 +576,12 @@ def LMM_Condition_x_vrfirst_abbafirst_phase(master_df):
     clean_df = clean_df.dropna(subset=['EDA_Tonic_Mean']).reset_index(drop=True)
     LMM_runmodel(clean_df, "EDA_Tonic_Mean ~ Condition * vrfirst + abbafirst + Phase", "EDA Tonic Mean")
     plot_normalized_interaction(clean_df)
-    LMM_runmodel(clean_df, "SCR_Freq_Delta ~ Condition * vrfirst + abbafirst + Phase", "SCR Freq Delta")
-    LMM_runmodel(clean_df, "Sympathetic_Delta ~ Condition * vrfirst + abbafirst + Phase", "EDA Sympathetic Delta")
-    LMM_runmodel(clean_df, "ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase", "ECG Delta over baseline")
-    plot_dual_interaction(clean_df[clean_df['Segment'].str.contains('baseline') == False])
-    LMM_runmodel(clean_df, "HRV_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase", "HRV RMSSD Delta over baseline")
-    plot_triple_signature(clean_df[~clean_df['Segment'].str.contains('baseline')])
+    LMM_runmodel(clean_df, "SCR_Freq_Norm ~ Condition * vrfirst + abbafirst + Phase", "SCR Freq Norm")
+    LMM_runmodel(clean_df, "EDA_Sympathetic_Norm ~ Condition * vrfirst + abbafirst + Phase", "EDA Sympathetic Norm")
+    #LMM_runmodel(clean_df, "ECG_Delta_over_baseline ~ Condition * vrfirst + abbafirst + Phase", "ECG Delta over baseline")
+    #plot_dual_interaction(clean_df)
+    #LMM_runmodel(clean_df, "HRV_RMSSD ~ Condition * vrfirst + abbafirst + Phase", "HRV RMSSD")
+    plot_triple_signature(clean_df)
     do_VIF_report(clean_df)
     # Calculate descriptive statistics for the key metrics
     metrics = ['EDA_Tonic_Mean', 'Sympathetic_Percent', 'SCR_Frequency_PerMin', 'ECG_Rate_Mean', 'HRV_RMSSD']
