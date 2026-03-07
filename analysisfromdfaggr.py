@@ -487,6 +487,7 @@ def get_standardized_beta(clean_df, modelresult, outcome):
 
 def LMM_runmodel(clean_df, formula, title):
     # 'Condition' is your categorical variable
+    outcome = formula.split()[0]
     #model = smf.mixedlm("EDA_Tonic_Mean ~ Condition + Other_Predictors",
     model = smf.mixedlm(formula,
                         data=clean_df,
@@ -511,13 +512,13 @@ def LMM_runmodel(clean_df, formula, title):
     else:
         emms_table = calculate_emms_main_effects(result, clean_df)
         print(emms_table.to_string(index=False))
+        plot_emms_main_effects(emms_table, outcome, title, fdr_table)
     print("\n")
-
+    
     df_contrasts = get_all_contrasts(result)
     print("--- Contrasts and Effect Sizes: (" + title + ") ---")
     print(df_contrasts)
     print("\n")
-    outcome = formula.split()[0]
     std_beta = get_standardized_beta(clean_df, result, outcome)
     print(f"Standardized Beta for {outcome}: {std_beta:.3f}")
     print("\n")
@@ -525,9 +526,11 @@ def LMM_runmodel(clean_df, formula, title):
     ci_table.columns = ['Lower 95%', 'Upper 95%']
     ci_table['Coef'] = result.params
     # Let's look at just the Fixed Effects (ignoring the Group Var)
-    print("--- Confidence Intervals: (" + title + ") ---")
+    print(f'--- Confidence Intervals: ({title}) ---')
     print(ci_table.iloc[:-1, :])
+    print(ci_table.iloc)
     print("\n")
+    plot_forest_data(ci_table.iloc[:-1, :], title, outcome)
     check_model_health(result, title)
     # Export coefficients to CSV
     summary_df = result.summary().tables[1]
@@ -535,6 +538,31 @@ def LMM_runmodel(clean_df, formula, title):
     summary_df.to_csv('LMM_Statsmodels_'+title_wo_blanks+'.csv')
 
     return result
+
+def plot_forest_data(ci_table, title, outcome):
+    # Data from your Model Contrasts
+    forest_data = {
+        'Predictor': ['Condition (VR)', 'Order (VR-Last)','Order (ABBA-Last)', 'Phase (P2)'],
+        'Coef':  ci_table['Coef'].iloc[1:],
+        'Lower': ci_table['Lower 95%'].iloc[1:],
+        'Upper': ci_table['Upper 95%'].iloc[1:]
+    }
+    df_forest = pd.DataFrame(forest_data)
+    plt.figure(figsize=(8, 5))
+    # Plot the points (coefficients)
+    plt.errorbar(df_forest['Coef'], df_forest['Predictor'],
+                 xerr=[df_forest['Coef'] - df_forest['Lower'], df_forest['Upper'] - df_forest['Coef']],
+                 fmt='o', color='black', ecolor='red', capsize=5, markersize=8)
+
+    plt.axvline(0, color='blue', linestyle='--') # Null effect line
+    plt.xlabel('Coefficient Estimate (with 95% CI)')
+    plt.title(f'Model Weights: Factors Affecting {' '.join(title.split()[:2])} Reactivity')
+    plt.grid(axis='x', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(f'forest_plot_model_coefficients_{outcome}.png', dpi=300)
+    plt.show()
+    plt.close()
 
 def do_VIF_report(clean_df):
     from statsmodels.stats.outliers_influence import variance_inflation_factor
@@ -624,6 +652,42 @@ def calculate_emms_main_effects(result, df):
     emm_df['Lower 95% CI'] = emm_df['EMM (Mean)'] - (1.96 * emm_df['SE'])
     emm_df['Upper 95% CI'] = emm_df['EMM (Mean)'] + (1.96 * emm_df['SE'])
     return emm_df
+
+def plot_emms_main_effects(df_emm, metric, title, fdr_df):
+
+    condition_row = fdr_df.loc[fdr_df['Predictor'] == 'Condition[T.VR]']
+    raw_p_val = condition_row['Raw_P'].iloc[0]
+    adj_p_val = condition_row['FDR_Adjusted_P'].iloc[0]
+
+    df_emm['Error'] = df_emm['Upper 95% CI'] - df_emm['EMM (Mean)']
+
+    plt.figure(figsize=(6, 7))
+    sns.set_style("whitegrid")
+
+    # Create Bar Plot
+    bars = plt.bar(df_emm['Condition'], df_emm['EMM (Mean)'], yerr=df_emm['Error'],
+                   capsize=10, color=['#3498db', '#e74c3c'], alpha=0.8)
+
+    plt.ylabel(f'{title} (EMM Delta)')
+    plt.title(f'Physiological Reactivity: 2D vs. VR\n({title})', fontsize=14, pad=20)
+    plt.axhline(0, color='black', linewidth=0.8)
+
+    # Place text 10% below the lowest error bar
+    y_min = (df_emm['EMM (Mean)'] - df_emm['Error']).min()
+    text_y = y_min - (abs(y_min) * 0.15)
+
+    # Significance star logic
+    sig_star = "*" if raw_p_val < 0.05 else ""
+
+    plt.text(0.5, text_y,
+             f"Raw P: {raw_p_val:.4f}{sig_star}\nFDR Adj P: {adj_p_val:.4f}",
+             ha='center', va='top', fontsize=11,
+             bbox=dict(facecolor='white', alpha=0.5, edgecolor='none'))
+
+    plt.tight_layout()
+    plt.savefig(f'EMM_{metric}.png', dpi=300)
+    #plt.show()
+    plt.close()
 
 def calculate_emmeans(result):
     p = result.fe_params
