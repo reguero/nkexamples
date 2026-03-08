@@ -148,11 +148,11 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     clean_df['Phase'] = np.select(conditions, choices, default='other')
     metrics = []
     pvalues = []
-    for metric, title in [ ("SCR_Freq_Norm_delta", "SCR Freq Norm delta"),
-                          ("EDA_Sympathetic_Norm_delta", "EDA Sympathetic Norm delta"),
+    for metric, title in [ ("SCR_Freq_Norm_delta", "Normalized SCR Frequency delta"),
+                          ("EDA_Sympathetic_Norm_delta", "Normalized EDA Sympathetic delta"),
                           #("EDA_Tonic_Mean", "EDA Tonic Mean"),
                           #("ECG_Delta_over_baseline", "ECG Delta over baseline"),
-                          ("HRV_RMSSD_Norm_delta", "HRV RMSSD Norm delta")]:
+                          ("HRV_RMSSD_Norm_delta", "Normalized HRV RMSSD delta")]:
         clean_df[metric] = pd.to_numeric(clean_df[metric], errors='coerce')
         clean_df = clean_df.dropna(subset=[metric]).reset_index(drop=True)
         formula = metric + " ~ Condition + vrfirst + abbafirst + Phase"
@@ -164,6 +164,8 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
         #print("\n")
         metrics.append(metric)
         pvalues.append(result.pvalues["Condition[T.VR]"])
+        # Boxplot of (raw) metric
+        plot_raw_boxplot(clean_df, metric, title)
         
     summary_df = get_fdr(metrics,pvalues)
     print("--- FDR (Benjamini-Hochberg) for main metrics ---")
@@ -189,6 +191,56 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     print(desc_table)
     print("\n")
     print("(Sympathetic_Percent = EDA_SympatheticN * 100)")
+
+def plot_raw_boxplot(df, outcome, title):
+    import matplotlib.patches as mpatches
+
+    plt.figure(figsize=(9, 6))
+    sns.set_style("whitegrid")
+
+    # Define your high-contrast colors
+    color_2d = '#003f5c' # Navy
+    color_vr = '#ff7c43' # Orange
+    my_palette = {'2D': color_2d, 'VR': color_vr}
+
+    # Boxplot - Explicitly define hue and palette
+    ax = sns.boxplot(x='Condition', y=outcome, data=df,
+                     hue='Condition',
+                     palette=my_palette, legend=False,
+                     width=0.4, showfliers=False, boxprops=dict(alpha=0.7))
+
+    # Stripplot - legend=False to prevent duplicates
+    sns.stripplot(x='Condition', y=outcome, data=df,
+                  hue='Condition',
+                  palette=my_palette, legend=False,
+                  size=6, jitter=True, alpha=0.5, edgecolor='auto', linewidth=0.5)
+
+    plt.axhline(0, color='black', linestyle='--', linewidth=1, alpha=0.7)
+
+    # FIX: Create Manual Legend Handles
+    patch_2d = mpatches.Patch(color=color_2d, label='2D')
+    patch_vr = mpatches.Patch(color=color_vr, label='VR')
+    # Add the Legend using the manual handles
+    plt.legend(handles=[patch_2d, patch_vr],
+               title="Condition",
+               bbox_to_anchor=(1.05, 1),
+               loc='upper left',
+               borderaxespad=0.)
+
+    # Labels and Title
+    plt.title(f'Boxplot of the individual distribution of\n{title}', fontsize=14, pad=15)
+    plt.ylabel(f'{title}')
+    plt.xlabel('Condition')
+
+    # Optional: Add the raw p-value from your model as an annotation
+    # Based on your SCR model results
+    #plt.text(0.5, df[outcome].max(), 'p = 0.022*',
+    #         ha='center', va='bottom', fontsize=12, fontweight='bold')
+
+    plt.tight_layout()
+    plt.savefig(f'Raw_Boxplot_{outcome}.png', dpi=300, bbox_inches='tight')
+    plt.show()
+    plt.close()
 
 def calculate_fdr_for_model(result):
     from statsmodels.stats.multitest import multipletests
@@ -313,7 +365,7 @@ def LMM_runmodel(clean_df, formula, title):
         plot_emms_main_effects(emms_table, outcome, title, fdr_table)
     print("\n")
     boxviostrip_plot(clean_df, title, outcome)
-    plot_raincloud(clean_df, outcome, ' '.join(title.split()[:2]), 'Delta')
+    plot_raincloud(clean_df, outcome, title, 'Neurofeedback condition')
     df_contrasts = get_all_contrasts(result)
     print("--- Contrasts and Effect Sizes: (" + title + ") ---")
     print(df_contrasts)
@@ -362,13 +414,13 @@ def plot_raincloud(df, y_col, title, ylabel):
 
     # Styling
     plt.axvline(0, color='black', linestyle='--', alpha=0.5) # Zero line
-    plt.title(title, fontsize=15, pad=20)
-    plt.xlabel(ylabel)
-    plt.ylabel('Experimental Condition')
+    plt.title(f'Raincloud of the individualized distribution of the\n{title}', fontsize=15, pad=20)
+    plt.xlabel(title)
+    plt.ylabel(ylabel)
 
     sns.despine(offset=10, trim=True)
     plt.tight_layout()
-    plt.show()
+    #plt.show()
 
 def boxviostrip_plot(master_df, title, outcome):
     # Assuming master_df contains your individual delta rows
@@ -400,11 +452,10 @@ def boxviostrip_plot(master_df, title, outcome):
     plt.axhline(0, ls='--', color='gray', alpha=0.7)
 
     # Fixed the title string formatting
-    clean_title = ' '.join(title.split()[:2])
-    plt.title(f'Individual Distribution of {clean_title} Reactivity', fontsize=14)
+    plt.title(f'Combined plot of individual distribution of the {title}', fontsize=14)
 
-    plt.ylabel('Delta (Stress - Baseline)')
-    plt.xlabel('Condition')
+    plt.ylabel(f'{title}')
+    plt.xlabel('Neurofeedback condition')
 
     plt.tight_layout()
     plt.savefig(f'boxviostrip_{outcome}.png', dpi=300)
@@ -483,6 +534,10 @@ def plot_emms_main_effects(df_emm, metric, title, fdr_df):
     raw_p_val = condition_row['Raw_P'].iloc[0]
     adj_p_val = condition_row['FDR_Adjusted_P'].iloc[0]
 
+    # Fix labels
+    df_emm['Condition'] = df_emm['Condition'].replace('VR (Treatment)', 'VR')
+    df_emm['Condition'] = df_emm['Condition'].replace('2D (Control)', '2D')
+
     df_emm['Error'] = df_emm['Upper 95% CI'] - df_emm['EMM (Mean)']
 
     plt.figure(figsize=(6, 7))
@@ -494,9 +549,29 @@ def plot_emms_main_effects(df_emm, metric, title, fdr_df):
     bars = plt.bar(df_emm['Condition'], df_emm['EMM (Mean)'], yerr=df_emm['Error'],
                    capsize=10, color=new_palette, alpha=0.8)
 
-    plt.ylabel(f'{title} (EMM Delta)')
-    plt.title(f'Physiological Reactivity: 2D vs. VR\n({title})', fontsize=14, pad=20)
+    conditions = df_emm['Condition'].tolist()
+
+    # Create Bar Plot by looping to assign labels for the legend
+    for i, cond in enumerate(conditions):
+        plt.bar(df_emm['Condition'].iloc[i],
+                df_emm['EMM (Mean)'].iloc[i],
+                yerr=df_emm['Error'].iloc[i],
+                capsize=10,
+                color=new_palette[i],
+                alpha=0.8,
+                label=cond) # This enables the legend
+
+    plt.ylabel(f'{title} (EMM)')
+    plt.title(f'Boxplot of the individual distribution of the\n{title} (EMM)', fontsize=14, pad=20)
     plt.axhline(0, color='black', linewidth=0.8)
+
+    # Add the Legend
+    #plt.legend(title="Condition", loc='upper right', frameon=True)
+    plt.legend(title="Condition",
+           bbox_to_anchor=(1.05, 1),
+           loc='upper left',
+           borderaxespad=0.,
+           frameon=True)
 
     # Place text 10% below the lowest error bar
     y_min = (df_emm['EMM (Mean)'] - df_emm['Error']).min()
@@ -511,7 +586,7 @@ def plot_emms_main_effects(df_emm, metric, title, fdr_df):
              bbox=dict(facecolor='white', alpha=0.5, edgecolor='none'))
 
     plt.tight_layout()
-    plt.savefig(f'EMM_{metric}.png', dpi=300)
+    plt.savefig(f'EMM_{metric}.png', dpi=300,bbox_inches='tight')
     plt.show()
     plt.close()
 
