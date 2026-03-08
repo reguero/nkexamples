@@ -359,7 +359,7 @@ def LMM_runmodel(clean_df, formula, title):
     else:
         emms_table = calculate_emms_main_effects(result, clean_df)
         print(emms_table.to_string(index=False))
-        plot_emms_main_effects(emms_table, outcome, title, fdr_table)
+        #plot_emms_main_effects(emms_table, outcome, title, fdr_table)
     print("\n")
     boxviostrip_plot(clean_df, title, outcome)
     plot_raincloud(clean_df, outcome, 'title', 'Neurofeedback condition')
