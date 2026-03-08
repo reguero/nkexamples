@@ -379,7 +379,6 @@ def LMM_runmodel(clean_df, formula, title):
     # Let's look at just the Fixed Effects (ignoring the Group Var)
     print(f'--- Confidence Intervals: ({title}) ---')
     print(ci_table.iloc[:-1, :])
-    print(ci_table.iloc)
     print("\n")
     plot_forest_data(ci_table.iloc[:-1, :], title, outcome)
     check_model_health(result, title)
