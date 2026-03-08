@@ -156,7 +156,11 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
         clean_df[metric] = pd.to_numeric(clean_df[metric], errors='coerce')
         clean_df = clean_df.dropna(subset=[metric]).reset_index(drop=True)
         formula = metric + " ~ Condition + vrfirst + abbafirst + Phase"
-        result = LMM_runmodel(clean_df, formula, title)
+        if metric == "EDA_Sympathetic_Norm_delta":
+            # Remove outlier PB21
+            result = LMM_runmodel(clean_df[clean_df['Participant'] != 'PB21'], formula, title)
+        else:
+            result = LMM_runmodel(clean_df, formula, title)
         ## Try OLS since Group Var is 0
         #ols_model = smf.ols(formula, data=clean_df).fit()
         #print("--- OLS model for "+formula+" ---")
@@ -239,7 +243,7 @@ def plot_raw_boxplot(df, outcome, title):
 
     plt.tight_layout()
     plt.savefig(f'Raw_Boxplot_{outcome}.png', dpi=300, bbox_inches='tight')
-    plt.show()
+    #plt.show()
     plt.close()
 
 def calculate_fdr_for_model(result):
@@ -381,7 +385,8 @@ def LMM_runmodel(clean_df, formula, title):
     print(ci_table.iloc[:-1, :])
     print("\n")
     plot_forest_data(ci_table.iloc[:-1, :], title, outcome)
-    check_model_health(result, title)
+    check_model_health(result, title, clean_df)
+    identify_outliers(clean_df, result, title)
     # Export coefficients to CSV
     summary_df = result.summary().tables[1]
     title_wo_blanks = "_".join(title.split())
@@ -419,7 +424,7 @@ def plot_raincloud(df, y_col, title, ylabel):
 
     sns.despine(offset=10, trim=True)
     plt.tight_layout()
-    #plt.show()
+    ##plt.show()
 
 def boxviostrip_plot(master_df, title, outcome):
     # Assuming master_df contains your individual delta rows
@@ -458,7 +463,7 @@ def boxviostrip_plot(master_df, title, outcome):
 
     plt.tight_layout()
     plt.savefig(f'boxviostrip_{outcome}.png', dpi=300)
-    plt.show()
+    #plt.show()
     plt.close()
 
 def plot_forest_data(ci_table, title, outcome):
@@ -483,7 +488,7 @@ def plot_forest_data(ci_table, title, outcome):
 
     plt.tight_layout()
     plt.savefig(f'forest_plot_model_coefficients_{outcome}.png', dpi=300)
-    plt.show()
+    #plt.show()
     plt.close()
 
 def do_VIF_report(clean_df):
@@ -586,7 +591,7 @@ def plot_emms_main_effects(df_emm, metric, title, fdr_df):
 
     plt.tight_layout()
     plt.savefig(f'EMM_{metric}.png', dpi=300,bbox_inches='tight')
-    plt.show()
+    #plt.show()
     plt.close()
 
 def calculate_emmeans(result):
@@ -636,10 +641,11 @@ def calculate_r2_mixed(result):
 
     return marginal_r2, conditional_r2
 
-def check_model_health(result, title):
+def check_model_health(result, title, df):
     # 'result' must be the object returned by model.fit()
     import statsmodels.api as sm
     from scipy import stats
+    from statsmodels.stats.diagnostic import het_breuschpagan
 
     try:
         residuals = result.resid  # No parentheses here for statsmodels MixedLM results
@@ -648,6 +654,38 @@ def check_model_health(result, title):
         # Fallback if the object passed was the model instead of the results
         print("Error: Please pass the FITTED result object (e.g., model.fit())")
         return
+    bp_test = het_breuschpagan(residuals, sm.add_constant(fitted_values))
+    labels = ['LM Statistic', 'LM-Test p-value', 'F-Statistic', 'F-Test p-value']
+    bp_results = dict(zip(labels, bp_test))
+    print(f"--- Breusch-Pagan Test: {title} ---")
+    for key, value in bp_results.items():
+        # Use :.4f for standard decimals or :.4e for scientific notation
+        if value < 0.001:
+            print(f"{key:<15}: {value:.4e}") # Scientific notation for very small p-values
+        else:
+            print(f"{key:<15}: {value:.4f}")
+
+    print("\n")
+    stat, p = stats.shapiro(residuals)
+    print(f'Shapiro test {title}')
+    print(stat, p)
+    print("\n")
+    std_resid = (residuals - np.mean(residuals)) / np.std(residuals)
+    # Find indices where absolute standardized residual > 3
+    extreme_indices = np.where(np.abs(std_resid) > 3)[0]
+
+    if len(extreme_indices) > 0:
+        # This only runs if outliers exist
+        outlier_data = df.iloc[extreme_indices].copy()
+        outlier_data['Z_Resid'] = std_resid[extreme_indices]
+
+        print(f"--- Extreme Outliers Found: {title} ---")
+        print(outlier_data[['Participant', 'Condition', 'Z_Resid']])
+    else:
+        # This runs if no outliers are found
+        print(f"--- No extreme outliers for {title} (|z| > 3) ---")
+
+    print("\n")
     fig, ax = plt.subplots(1, 2, figsize=(12, 5))
     # QQ-Plot: The DHARMa equivalent for checking normality
     sm.qqplot(residuals, dist=stats.norm, line='s', ax=ax[0])
@@ -661,8 +699,33 @@ def check_model_health(result, title):
     plt.tight_layout()
     fig = plt.gcf()
     fig.savefig("QQ-Plot: Residual Normality: "+title+".png")
-    #plt.show()
+    ##plt.show()
     plt.close()
+
+def identify_outliers(df, model_fit, title, threshold=2.5):
+    df = df.copy()
+    df['resid'] = model_fit.resid
+
+    # Standardize residuals for easier thresholding
+    std_resid = (df['resid'] - df['resid'].mean()) / df['resid'].std()
+    df['std_resid'] = std_resid
+
+    plt.figure(figsize=(10, 6))
+    sns.scatterplot(x=df.index, y=df['std_resid'], hue=df['Condition'])
+    plt.axhline(threshold, color='red', linestyle='--')
+    plt.axhline(-threshold, color='red', linestyle='--')
+
+    # Annotate points that are outside the threshold
+    for i in range(len(df)):
+        if abs(df['std_resid'].iloc[i]) > threshold:
+            plt.text(i, df['std_resid'].iloc[i],
+                     df['Participant'].iloc[i],
+                     fontsize=9, weight='bold')
+
+    plt.title(f'Standardized Residuals by Observation Index\n{title}')
+    plt.ylabel("Standardized Residual")
+    #plt.show()
+
 
 if __name__ == "__main__":
     main()
