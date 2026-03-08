@@ -146,7 +146,7 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     metrics = []
     pvalues = []
     for metric, title in [ ("SCR_Freq_Norm_delta", "Normalized SCR Frequency delta"),
-                          ("EDA_Sympathetic_Norm_delta", "Normalized SCR Frequency delta"),
+                          ("EDA_Sympathetic_Norm_delta", "Normalized EDA Sympathetic delta"),
                           #("EDA_Tonic_Mean", "EDA Tonic Mean"),
                           #("ECG_Delta_over_baseline", "ECG Delta over baseline"),
                           ("HRV_RMSSD_Norm_delta", "Normalized HRV RMSSD delta")]:
