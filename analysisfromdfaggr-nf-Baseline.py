@@ -342,10 +342,17 @@ def plot_raincloud(df, y_col, title, ylabel):
     import ptitprince as pt
     fig, ax = plt.subplots(figsize=(10, 7))
 
+    # Default
+    # palette=['#3498db', '#e74c3c']
+    # Choice 1: The High-Contrast Academic Look
+    #new_palette = ['#2c3e50', '#c0392b']
+    # Choice 2: The Accessible/High-Pop Look
+    new_palette = ['#003f5c', '#ff7c43']
+
     # Create the Raincloud Plot
     pt.RainCloud(x = 'Condition', y = y_col, data = df,
                  hue='Condition',
-                 palette = ["#3498db", "#e74c3c"],
+                 palette = new_palette,
                  bw = .2,        # Smoothness of the cloud
                  width_viol = .6,
                  ax = ax,
@@ -367,22 +374,28 @@ def boxviostrip_plot(master_df, title, outcome):
     # Assuming master_df contains your individual delta rows
     plt.figure(figsize=(10, 6))
     sns.set_style("whitegrid")
+    # Default
+    # palette=['#3498db', '#e74c3c']
+    # Choice 1: The High-Contrast Academic Look
+    #new_palette = ['#2c3e50', '#c0392b']
+    # Choice 2: The Accessible/High-Pop Look
+    new_palette = ['#003f5c', '#ff7c43']
 
     # Violinplot (The 'Cloud' / Density)
     sns.violinplot(x='Condition', y=outcome, data=master_df,
                    hue='Condition', legend=False,
-                   split=True, inner=None, alpha=0.3, palette=['#3498db', '#e74c3c'], cut=0)
+                   split=True, inner=None, alpha=0.3, palette=new_palette)
     # Placed on top of violin but below the points
     sns.boxplot(x='Condition', y=outcome, data=master_df,
                 hue='Condition', legend=False,
-                width=0.15, palette=['#3498db', '#e74c3c'],
+                width=0.15, palette=new_palette,
                 showfliers=False, boxprops={'zorder': 2})
     # 3. Stripplot (The 'Rain' / Raw Data)
     # Increased size slightly and set zorder to ensure points are on top
     sns.stripplot(x='Condition', y=outcome, data=master_df,
                   hue='Condition', legend=False,
                   size=5, jitter=True, alpha=0.6,
-                  palette=['#3498db', '#e74c3c'], zorder=3)
+                  palette=new_palette, zorder=3)
 
     plt.axhline(0, ls='--', color='gray', alpha=0.7)
 
@@ -476,8 +489,10 @@ def plot_emms_main_effects(df_emm, metric, title, fdr_df):
     sns.set_style("whitegrid")
 
     # Create Bar Plot
+    # orig = ['#3498db', '#e74c3c']
+    new_palette = ['#003f5c', '#ff7c43']
     bars = plt.bar(df_emm['Condition'], df_emm['EMM (Mean)'], yerr=df_emm['Error'],
-                   capsize=10, color=['#3498db', '#e74c3c'], alpha=0.8)
+                   capsize=10, color=new_palette, alpha=0.8)
 
     plt.ylabel(f'{title} (EMM Delta)')
     plt.title(f'Physiological Reactivity: 2D vs. VR\n({title})', fontsize=14, pad=20)
@@ -497,7 +512,7 @@ def plot_emms_main_effects(df_emm, metric, title, fdr_df):
 
     plt.tight_layout()
     plt.savefig(f'EMM_{metric}.png', dpi=300)
-    #plt.show()
+    plt.show()
     plt.close()
 
 def calculate_emmeans(result):
