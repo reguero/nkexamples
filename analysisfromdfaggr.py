@@ -35,6 +35,9 @@ def fixPB12(master_df):
     master_df = master_df[master_df['Participant'] != 'PB12-partie_2']
     #print("Final segments for PB12:")
     #print(master_df.query("Participant == 'PB12'")['Segment'].unique())
+    #print('PB12-partie_2 in function')
+    #print(master_df.query("Participant == 'PB12-partie_2'")['Segment'].unique())
+    return master_df
 
 def produce_normalized_metrics(master_df):
     log_metrics = ['EDA_Tonic_Mean', 'EDA_Tonic_SD', 'SCR_Peaks_Amplitude_Mean']
@@ -57,8 +60,8 @@ def produce_normalized_metrics(master_df):
     sym_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['EDA_SympatheticN'].mean()
     # Map those baselines back to the main dataframe
     master_df['Sympathetic_Delta'] = logit(master_df['EDA_SympatheticN'].clip(0.001, 0.999)) - logit(master_df['Participant'].map(sym_baselines).clip(0.001, 0.999))
-    #master_df['EDA_Sympathetic_Norm'] = np.log(master_df['EDA_SympatheticN'] + 1e-6)
-    master_df['EDA_Sympathetic_Norm'] = np.log1p(master_df['EDA_SympatheticN'])*100
+    master_df['EDA_Sympathetic_Norm'] = np.log(master_df['EDA_SympatheticN'] + 1e-6)*100
+    #master_df['EDA_Sympathetic_Norm'] = np.log1p(master_df['EDA_SympatheticN'])*100
 
     # Get average baseline per participant for ECG
     ecg_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['ECG_Rate_Mean'].mean()
@@ -70,8 +73,9 @@ def produce_normalized_metrics(master_df):
     # Map and subtract to get the "ms Change"
     # Negative values = Reduced regulation (higher stress) | Positive values = Increased relaxation
     master_df['HRV_Delta_over_baseline'] = master_df['HRV_RMSSD'] - master_df['Participant'].map(hrv_baselines)
-    #master_df['HRV_RMSSD_Norm'] = np.log(master_df['HRV_RMSSD'] + 1e-6) 
-    master_df['HRV_RMSSD_Norm'] = np.log1p(master_df['HRV_RMSSD']) 
+    master_df['HRV_RMSSD_Norm'] = np.log(master_df['HRV_RMSSD'] + 1e-6) 
+    #master_df['HRV_RMSSD_Norm'] = np.log1p(master_df['HRV_RMSSD']) 
+    return master_df
 
 def produce_deltas(master_df):
     # Define the metrics to calculate
@@ -101,6 +105,7 @@ def produce_deltas(master_df):
     #print(master_df[master_df['Segment'].str.contains('nf1')][['Participant', 'Segment'] + [f"{m}_delta" for m in metrics]].head())
     ## Check the result for the first participant's nf2 row
     #print(master_df[master_df['Segment'].str.contains('nf2')][['Participant', 'Segment'] + [f"{m}_delta" for m in metrics]].head())
+    return master_df
 
 
 def main():
@@ -108,9 +113,14 @@ def main():
     with open('dfmaster.pkl', 'rb') as f:
         master_df = pickle.load(f)
 
-    fixPB12(master_df)
-    produce_normalized_metrics(master_df)
-    produce_deltas(master_df)
+    master_df = fixPB12(master_df)
+    #print('PB12-partie_2 in master')
+    #print(master_df.query("Participant == 'PB12-partie_2'")['Segment'].unique())
+    #print("Final segments for PB12:")
+    #print(master_df.query("Participant == 'PB12'")['Segment'].unique())
+    #print(master_df[master_df['Participant'] == 'PB12'].to_string())
+    master_df = produce_normalized_metrics(master_df)
+    master_df = produce_deltas(master_df)
     #analysis_of_deltas_with_groups(master_df)
     LMM_Condition_vrfirst_abbafirst_phase(master_df)
     #LMM_Condition_x_vrfirst_abbafirst_phase(master_df)
@@ -153,11 +163,15 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
         clean_df[metric] = pd.to_numeric(clean_df[metric], errors='coerce')
         clean_df = clean_df.dropna(subset=[metric]).reset_index(drop=True)
         formula = metric + " ~ Condition + vrfirst + abbafirst + Phase + Baseline"
-        if metric == "EDA_Sympathetic_Norm_delta":
-            # Remove outlier PB21
-            result = LMM_runmodel(clean_df[clean_df['Participant'] != 'PB21'], formula, title)
-        else:
-            result = LMM_runmodel(clean_df, formula, title)
+        outliers_to_remove = []
+        if metric == "SCR_Freq_Norm_delta":
+            outliers_to_remove = ['PB13']
+        elif metric == "EDA_Sympathetic_Norm_delta":
+            outliers_to_remove = ['PB23', 'PB12']
+        elif metric == "HRV_RMSSD_Norm_delta":
+            outliers_to_remove = ['PB23', 'PB21', 'PB19']
+        df_cleaned_out = clean_df[~clean_df['Participant'].isin(outliers_to_remove)]
+        result = LMM_runmodel(df_cleaned_out, formula, title)
         ## Try OLS since Group Var is 0
         #ols_model = smf.ols(formula, data=clean_df).fit()
         #print("--- OLS model for "+formula+" ---")
@@ -366,7 +380,7 @@ def LMM_runmodel(clean_df, formula, title):
         #plot_emms_main_effects(emms_table, outcome, title, fdr_table)
     print("\n")
     boxviostrip_plot(clean_df, title, outcome)
-    plot_raincloud(clean_df, outcome, 'title', 'Neurofeedback condition')
+    plot_raincloud(clean_df, outcome, title, 'Neurofeedback condition')
     df_contrasts = get_all_contrasts(result)
     print("--- Contrasts and Effect Sizes: (" + title + ") ---")
     print(df_contrasts)
@@ -667,21 +681,21 @@ def check_model_health(result, title, df):
     print(f'Shapiro test {title}')
     print(stat, p)
     print("\n")
-    std_resid = (residuals - np.mean(residuals)) / np.std(residuals)
-    # Find indices where absolute standardized residual > 3
-    extreme_indices = np.where(np.abs(std_resid) > 3)[0]
-
-    if len(extreme_indices) > 0:
-        # This only runs if outliers exist
-        outlier_data = df.iloc[extreme_indices].copy()
-        outlier_data['Z_Resid'] = std_resid[extreme_indices]
-
+    # Get residuals and ensure they are a Pandas Series with the SAME index as clean_df
+    residuals = pd.Series(result.resid, index=df.index)
+    # Calculate Z-score using Pandas (handles alignment automatically)
+    std_resid = (residuals - residuals.mean()) / residuals.std()
+    # Find extreme indices
+    extreme_indices = std_resid[std_resid.abs() > 2.5].index
+    if not extreme_indices.empty:
+        # Create the outlier table
+        outlier_data = df.loc[extreme_indices].copy()
+        # Add the Z-score safely
+        outlier_data['Z_Resid'] = std_resid.loc[extreme_indices]
         print(f"--- Extreme Outliers Found: {title} ---")
         print(outlier_data[['Participant', 'Condition', 'Z_Resid']])
     else:
-        # This runs if no outliers are found
-        print(f"--- No extreme outliers for {title} (|z| > 3) ---")
-
+        print(f"--- No extreme outliers for {title} ---")
     print("\n")
     fig, ax = plt.subplots(1, 2, figsize=(12, 5))
     # QQ-Plot: The DHARMa equivalent for checking normality
