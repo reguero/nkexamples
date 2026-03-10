@@ -9,6 +9,7 @@ import pickle
 import pingouin as pg
 from scipy.special import logit
 import statsmodels.formula.api as smf
+from scipy import stats
 
 def fixPB12(master_df):
     # Fix PB12 with values from B12-partie_2
@@ -70,8 +71,10 @@ def produce_normalized_metrics(master_df):
     # Map and subtract to get the "ms Change"
     # Negative values = Reduced regulation (higher stress) | Positive values = Increased relaxation
     master_df['HRV_Delta_over_baseline'] = master_df['HRV_RMSSD'] - master_df['Participant'].map(hrv_baselines)
-    #master_df['HRV_RMSSD_Norm'] = np.log(master_df['HRV_RMSSD'] + 1e-6) 
-    master_df['HRV_RMSSD_Norm'] = np.log1p(master_df['HRV_RMSSD']) 
+    master_df['HRV_RMSSD_Norm'] = np.log(master_df['HRV_RMSSD']+ 1e-6) 
+    #master_df['HRV_RMSSD_Norm'] = np.log1p(master_df['HRV_RMSSD']) 
+    #master_df['HRV_RMSSD_Norm'], maxlog = stats.boxcox(master_df['HRV_RMSSD'])
+    #print(f"Boxcox Optimal Lambda found for HRV_RMSSD: {maxlog:.2f}")
 
 def produce_deltas(master_df):
     # Define the metrics to calculate
@@ -156,9 +159,13 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
         clean_df[metric] = pd.to_numeric(clean_df[metric], errors='coerce')
         clean_df = clean_df.dropna(subset=[metric]).reset_index(drop=True)
         formula = metric + " ~ Condition + vrfirst + abbafirst + Phase"
-        if metric == "EDA_Sympathetic_Norm_delta":
+        if   metric == "EDA_Sympathetic_Norm_delta":
             # Remove outlier PB21
             result = LMM_runmodel(clean_df[clean_df['Participant'] != 'PB21'], formula, title)
+        elif metric == 'HRV_RMSSD_Norm_delta':
+            outliers_to_remove = ['PB23', 'PB19', 'PB17']
+            df_cleaned_out = clean_df[~clean_df['Participant'].isin(outliers_to_remove)]
+            result = LMM_runmodel(df_cleaned_out, formula, title)
         else:
             result = LMM_runmodel(clean_df, formula, title)
         ## Try OLS since Group Var is 0
