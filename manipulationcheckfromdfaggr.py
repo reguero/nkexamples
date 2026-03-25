@@ -59,7 +59,7 @@ def produce_normalized_metrics(master_df):
 
     sym_baselines = master_df[master_df['Segment'].str.contains('baseline')].groupby('Participant')['EDA_SympatheticN'].mean()
     # Map those baselines back to the main dataframe
-    master_df['Sympathetic_Delta'] = logit(master_df['EDA_SympatheticN'].clip(0.001, 0.999)) - logit(master_df['Participant'].map(sym_baselines).clip(0.001, 0.999))
+    master_df['EDA_Sympathetic_Delta'] = np.log(master_df['EDA_SympatheticN'].clip(0.001, 0.999)) - np.log(master_df['Participant'].map(sym_baselines).clip(0.001, 0.999))
     master_df['EDA_Sympathetic_Norm'] = np.log(master_df['EDA_SympatheticN'] + 1e-6)*100
     #master_df['EDA_Sympathetic_Norm'] = np.log1p(master_df['EDA_SympatheticN'])*100
 
@@ -73,6 +73,7 @@ def produce_normalized_metrics(master_df):
     # Map and subtract to get the "ms Change"
     # Negative values = Reduced regulation (higher stress) | Positive values = Increased relaxation
     master_df['HRV_Delta_over_baseline'] = master_df['HRV_RMSSD'] - master_df['Participant'].map(hrv_baselines)
+    master_df['HRV_RMSSD_Delta'] = np.log(master_df['HRV_RMSSD']) - np.log(master_df['Participant'].map(hrv_baselines))
     master_df['HRV_RMSSD_Norm'] = np.log(master_df['HRV_RMSSD'] + 1e-6) 
     #master_df['HRV_RMSSD_Norm'] = np.log1p(master_df['HRV_RMSSD']) 
     return master_df
@@ -155,31 +156,46 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     clean_df['Phase'] = np.select(conditions, choices, default='other')
     # Define the conditions
     conditions = [
-        clean_df['Segment'].str.contains('ABBA', case=False, na=False),
-        clean_df['Segment'].str.contains('MIST', case=False, na=False)
+        clean_df['Segment'].str.contains('ABBA', case=False),
+        clean_df['Segment'].str.contains('MIST', case=False)
     ]
     # Define the corresponding values
     choices = ['ABBA', 'MIST']
     # Create the column (default to 'other' if neither nf1 nor nf2 is found)
     clean_df['StressTask'] = np.select(conditions, choices, default='other')
+    clean_df = clean_df[clean_df['StressTask'] != 'other']
+    #print(clean_df['StressTask'])
+    #print("Unique values in StressTask:", clean_df['StressTask'].unique())
+    #return
+    #clean_df['StressTask'] = clean_df['Segment'].apply(
+    #    lambda x: 'Stress' if 'stress' in x.lower() else 'Control'
+    #)
 
     metrics = []
     pvalues = []
-    for metric, title in [ ("SCR_Freq_Norm_delta", "Normalized SCR Frequency delta"),
-                          ("EDA_Sympathetic_Norm_delta", "Normalized EDA Sympathetic delta"),
+    #for metric, title in [ ("SCR_Freq_Norm_delta", "Normalized SCR Frequency delta"),
+    #                      ("EDA_Sympathetic_Norm_delta", "Normalized EDA Sympathetic delta"),
+    for metric, title in [ ("SCR_Freq_Delta", "Normalized SCR Frequency delta"),
+                          ("EDA_Sympathetic_Delta", "Normalized EDA Sympathetic delta"),
                           #("EDA_Tonic_Mean", "EDA Tonic Mean"),
                           #("ECG_Delta_over_baseline", "ECG Delta over baseline"),
-                          ("HRV_RMSSD_Norm_delta", "Normalized HRV RMSSD delta")]:
+                          #("HRV_RMSSD_Norm_delta", "Normalized HRV RMSSD delta")]:
+                          ("HRV_RMSSD_Delta", "Normalized HRV RMSSD delta")]:
         clean_df[metric] = pd.to_numeric(clean_df[metric], errors='coerce')
         clean_df = clean_df.dropna(subset=[metric]).reset_index(drop=True)
         #formula = metric + " ~ Condition + vrfirst + abbafirst + Phase + Baseline"
         formula = metric + " ~ StressTask"
+        #formula = metric + " ~ C(StressTask, Treatment(reference='ABBA'))"
         outliers_to_remove = []
-        if metric == "SCR_Freq_Norm_delta":
+        #if metric == "SCR_Freq_Norm_delta":
+        #elif metric == "EDA_Sympathetic_Norm_delta":
+        #elif metric == "HRV_RMSSD_Norm_delta":
+        if metric == "SCR_Freq_Delta":
             outliers_to_remove = ['PB13']
-        elif metric == "EDA_Sympathetic_Norm_delta":
-            outliers_to_remove = ['PB23', 'PB12']
-        elif metric == "HRV_RMSSD_Norm_delta":
+        elif metric == "EDA_Sympathetic_Delta":
+            #outliers_to_remove = ['PB23', 'PB12']
+            outliers_to_remove = ['PB21']
+        elif metric == "HRV_RMSSD_Delta":
             outliers_to_remove = ['PB23', 'PB21', 'PB19']
         df_cleaned_out = clean_df[~clean_df['Participant'].isin(outliers_to_remove)]
         result = LMM_runmodel(df_cleaned_out, formula, title)
@@ -371,6 +387,7 @@ def LMM_runmodel(clean_df, formula, title):
     result = model.fit()
     print("=== Statsmodels Linear Mixed Model " + formula + " ===")
     print(result.summary())
+    print(result.params)
     fdr_table = calculate_fdr_for_model(result)
     print("--- FDR (Benjamini-Hochberg) for model " + formula + " ---")
     print(fdr_table)
@@ -391,8 +408,8 @@ def LMM_runmodel(clean_df, formula, title):
         ##plot_emms_main_effects(emms_table, outcome, title, fdr_table)
         pass
     print("\n")
-    boxviostrip_plot(clean_df, title, outcome)
-    plot_raincloud(clean_df, outcome, title, 'Neurofeedback condition')
+    #boxviostrip_plot(clean_df, title, outcome)
+    #plot_raincloud(clean_df, outcome, title, 'Neurofeedback condition')
     df_contrasts = get_all_contrasts(result)
     print("--- Contrasts and Effect Sizes: (" + title + ") ---")
     print(df_contrasts)
