@@ -208,10 +208,12 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
         if metric == "SCR_Freq_Delta":
             outliers_to_remove = ['PB13']
         elif metric == "EDA_Sympathetic_Delta":
-            #outliers_to_remove = ['PB23', 'PB12']
-            outliers_to_remove = ['PB21']
+            #    #outliers_to_remove = ['PB23', 'PB12']
+            #    outliers_to_remove = ['PB21']
+            pass
         elif metric == "HRV_RMSSD_Delta":
-            outliers_to_remove = ['PB23', 'PB21', 'PB19']
+            #    outliers_to_remove = ['PB23', 'PB21', 'PB19']
+            outliers_to_remove = ['PB21', 'PB14', 'PB25']
         df_cleaned_out = clean_df[~clean_df['Participant'].isin(outliers_to_remove)]
         result = LMM_runmodel(df_cleaned_out, formula, title)
         ## Try OLS since Group Var is 0
@@ -222,7 +224,7 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
         #metrics.append(metric)
         #pvalues.append(result.pvalues["Condition[T.VR]"])
         # Boxplot of (raw) metric
-        plot_raw_boxplot(clean_df, metric, title)
+        #plot_raw_boxplot(clean_df, metric, title)
         
     #summary_df = get_fdr(metrics,pvalues)
     #print("--- FDR (Benjamini-Hochberg) for main metrics ---")
@@ -240,14 +242,14 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     #print(desc_table)
     #print("\n")
 
-    rawmetrics = ['SCR_Frequency_PerMin', 'Sympathetic_Percent', 'HRV_RMSSD']
-    desc_table = clean_df.groupby(['vrfirst', 'Condition'])[rawmetrics].agg(['mean', 'std']).round(3)
-    # Reset index for a cleaner look if exporting to CSV
-    desc_table.to_csv("Appendix_Descriptives_main_efffect_models.csv")
-    print("--- Descriptive statistics report for the key metrics (raw) ---")
-    print(desc_table)
-    print("\n")
-    print("(Sympathetic_Percent = EDA_SympatheticN * 100)")
+    #rawmetrics = ['SCR_Frequency_PerMin', 'Sympathetic_Percent', 'HRV_RMSSD']
+    #desc_table = clean_df.groupby(['vrfirst', 'Condition'])[rawmetrics].agg(['mean', 'std']).round(3)
+    ## Reset index for a cleaner look if exporting to CSV
+    #desc_table.to_csv("Appendix_Descriptives_main_efffect_models.csv")
+    #print("--- Descriptive statistics report for the key metrics (raw) ---")
+    #print(desc_table)
+    #print("\n")
+    #print("(Sympathetic_Percent = EDA_SympatheticN * 100)")
 
 def plot_raw_boxplot(df, outcome, title):
     import matplotlib.patches as mpatches
@@ -737,7 +739,8 @@ def check_model_health(result, title, df):
         # Add the Z-score safely
         outlier_data['Z_Resid'] = std_resid.loc[extreme_indices]
         print(f"--- Extreme Outliers Found: {title} ---")
-        print(outlier_data[['Participant', 'Condition', 'Z_Resid']])
+        #print(outlier_data[['Participant', 'Condition', 'Z_Resid']])
+        print(outlier_data[['Participant', 'SegmentType', 'Z_Resid']])
     else:
         print(f"--- No extreme outliers for {title} ---")
     print("\n")
