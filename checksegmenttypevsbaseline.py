@@ -210,7 +210,8 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
         elif metric == "EDA_Sympathetic_Delta":
             #    #outliers_to_remove = ['PB23', 'PB12']
             #    outliers_to_remove = ['PB21']
-            outliers_to_remove = ['PB7']
+            #outliers_to_remove = ['PB7']
+            pass
         elif metric == "HRV_RMSSD_Delta":
             #    outliers_to_remove = ['PB23', 'PB21', 'PB19']
             outliers_to_remove = ['PB21', 'PB14', 'PB25']
