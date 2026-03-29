@@ -206,14 +206,14 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
         #elif metric == "EDA_Sympathetic_Norm_delta":
         #elif metric == "HRV_RMSSD_Norm_delta":
         if metric == "SCR_Freq_Delta":
-            outliers_to_remove = ['PB13']
+            outliers_to_remove = ['PB13', 'PB3']
         elif metric == "EDA_Sympathetic_Delta":
             #    #outliers_to_remove = ['PB23', 'PB12']
             #    outliers_to_remove = ['PB21']
-            pass
+            outliers_to_remove = ['PB7']
         elif metric == "HRV_RMSSD_Delta":
             #    outliers_to_remove = ['PB23', 'PB21', 'PB19']
-            outliers_to_remove = ['PB21', 'PB14', 'PB25']
+            outliers_to_remove = ['PB21', 'PB14', 'PB25', 'PB17']
         df_cleaned_out = clean_df[~clean_df['Participant'].isin(outliers_to_remove)]
         result = LMM_runmodel(df_cleaned_out, formula, title)
         ## Try OLS since Group Var is 0
@@ -782,7 +782,7 @@ def identify_outliers(df, model_fit, title, threshold=2.5):
 
     plt.title(f'Standardized Residuals by Observation Index\n{title}')
     plt.ylabel("Standardized Residual")
-    #plt.show()
+    plt.show()
 
 if __name__ == "__main__":
     main()
