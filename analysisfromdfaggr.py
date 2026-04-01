@@ -189,9 +189,12 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
 
     do_VIF_report(clean_df)
 
+    # Update your aggregation list
+    stats_to_run = ['count', 'mean', 'std', 'median', iqr]
+
     # Calculate descriptive statistics for the key metrics
     # Create the summary table
-    desc_table = clean_df.groupby(['vrfirst', 'Condition'])[metrics].agg(['mean', 'std']).round(3)
+    desc_table = clean_df.groupby(['vrfirst', 'Condition'])[metrics].agg(stats_to_run).round(3)
     # Reset index for a cleaner look if exporting to CSV
     desc_table.to_csv("Appendix_Descriptives_main_efffect_models_normalized.csv")
     print("--- Descriptive statistics report for the key metrics (normalized) ---")
@@ -199,13 +202,27 @@ def LMM_Condition_vrfirst_abbafirst_phase(master_df):
     print("\n")
 
     rawmetrics = ['SCR_Frequency_PerMin', 'Sympathetic_Percent', 'HRV_RMSSD']
-    desc_table = clean_df.groupby(['vrfirst', 'Condition'])[rawmetrics].agg(['mean', 'std']).round(3)
-    # Reset index for a cleaner look if exporting to CSV
-    desc_table.to_csv("Appendix_Descriptives_main_efffect_models.csv")
-    print("--- Descriptive statistics report for the key metrics (raw) ---")
-    print(desc_table)
+    #desc_table = clean_df.groupby(['vrfirst', 'Condition'])[rawmetrics].agg(['mean', 'std']).round(3)
+    ## Reset index for a cleaner look if exporting to CSV
+    #desc_table.to_csv("Appendix_Descriptives_main_efffect_models.csv")
+    #print("--- Descriptive statistics report for the key metrics (raw) ---")
+    #print(desc_table)
+
+    # Calculate for Raw Metrics
+    desc_table_raw = clean_df.groupby(['vrfirst', 'Condition'])[rawmetrics].agg(stats_to_run).round(3)
+
+    # Reset index and clean up column names for the CSV export
+    #desc_table_raw.columns = [f"{col[0]}_{col[1]}" for col in desc_table_raw.columns]
+    desc_table_raw.to_csv("Appendix_Descriptives_Raw_Full.csv")
+
+    print("--- Descriptive statistics with Median and IQR (Raw) ---")
+    print(desc_table_raw)
     print("\n")
     print("(Sympathetic_Percent = EDA_SympatheticN * 100)")
+
+# Define a simple function for IQR
+def iqr(x):
+    return x.quantile(0.75) - x.quantile(0.25)
 
 def plot_raw_boxplot(df, outcome, title):
     import matplotlib.patches as mpatches
